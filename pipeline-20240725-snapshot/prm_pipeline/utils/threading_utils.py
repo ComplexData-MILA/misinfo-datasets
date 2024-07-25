@@ -42,7 +42,7 @@ class Cache(Generic[K, V]):
     at most one thread may invoke get_item_uncached. All other
     threads requesting the same key should wait. Implementation:
     dictionary of locks, one for each key. See:
-    chat.openai.com/share/6895aa47-a5dc-4a62-98a2-61a02a51aa7b
+    <REDACTED>
 
     Params:
         capacity: int, max number of keys to store.
