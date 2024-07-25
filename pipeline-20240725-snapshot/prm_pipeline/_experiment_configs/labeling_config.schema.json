@@ -1,0 +1,72 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "required": [
+        "config_version",
+        "forest_names",
+        "source_attributes",
+        "num_examples",
+        "questions"
+    ],
+    "properties": {
+        "config_version": {
+            "type": "number",
+            "description": "Identify version compatibility."
+        },
+        "forest_names": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Forest names; enumerated in this order."
+        },
+        "source_attributes": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Dataset attributes to display, as in tree_attributes.source. Enumerated in this order."
+        },
+        "num_examples": {
+            "type": "number",
+            "description": "Number of paths to label in each forest."
+        },
+        "questions": {
+            "type": "array",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "description": "Stored in DB. Please use [a-z0-9] and hyphens only."
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Question text presented to labelers."
+                },
+                "options": {
+                    "type": "array",
+                    "description": "List of choices."
+                },
+                "specification": {
+                    "type": "string",
+                    "description": "In-depth explanation of the question, phrased as a question."
+                }
+            },
+            "required": [
+                "key",
+                "description",
+                "options"
+            ]
+        },
+        "leaf_attributes": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Attributes in the node_attributes of the leaf node to display. Enumerated in this order."
+        },
+        "prng_seed": {
+            "type": "number",
+            "description": "Seed for shuffling and selecting examples."
+        }
+    }
+}

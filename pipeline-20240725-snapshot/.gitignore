@@ -1,0 +1,9 @@
+/env
+__pycache__
+*.env
+/output.*
+/cache
+/data
+**/configs/
+/static
+/mongodb

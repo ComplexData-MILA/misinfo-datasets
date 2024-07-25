@@ -1,0 +1,18 @@
+{
+    "$schema": "../labeling_config.schema.json",
+    "forest_names": [],
+    "source_attributes": [
+        "label"
+    ],
+    "num_examples": 10,
+    "questions": [
+        {
+            "key": "consistency",
+            "description": "Consistent in reasoning",
+            "options": [
+                true,
+                false
+            ]
+        }
+    ]
+}

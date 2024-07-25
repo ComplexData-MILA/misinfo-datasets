@@ -1,0 +1,6 @@
+{
+    "rollout_template_version": "example-20231018a2",
+    "template": "Below is a dubious statement: \n\n{statement} \n\nYour task is to present a careful step-by-step analysis of why and why not this statement should be considered as true or false. Present your analysis in this format: \n```\n<u>Step 1: Understanding the statement</u>\n...\n``` \nAFTER presenting a thorough analysis, you should summarize your reasoning and state whether you think this statement is True or False. To do so, end your response with a summary and then `<u>Verdict: True (code: 1)</u>` for True, or `<u>Verdict: False (code: 0)</u>` for False. You may also state `<u>Verdict: More info required (code: -1)</u>` if you need more information. Since you might change your mind as you write down your reasoning, you must not state your conclusion until you have presented a thorough step-by-step analysis. \n\n",
+    "reasoning_delimiter_pattern": "</?u>|Step|```",
+    "prediction_pattern": "code: ([-0-1]+)"
+}
