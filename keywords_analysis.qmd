@@ -1,0 +1,4041 @@
+---
+title: "# CODES - A GUIDE TO MISINFORMATION DETECTION DATASET - Keywords"
+format: pdf
+editor: visual
+---
+
+# Data
+
+```{r, message=FALSE, warning=FALSE}
+
+# Librairies --------------------------------------------------------------
+
+library(readr)
+library(tidyverse)
+library(randomForest)
+library(caret)
+library(stringr)
+library(tidytext)
+library(quanteda)
+library(jsonlite)
+library(xlsx)
+library(rdflib)
+library(nnet)
+library(broom)
+library(ggrepel)
+library(tm) 
+library(yardstick)
+library(MLmetrics)
+library(viridis)
+library(patchwork)
+
+# Data - Claims --------------------------------------------------------------------
+
+dat_claims <- read_csv("C:/Users/client/Desktop/datasets/2024-08-23_dat_claims.csv")
+
+# See all datasets --------------------------------------------------------
+
+dat_claims %>% 
+  select(dataset) %>% 
+  table()
+
+```
+
+# Labels
+
+```{r, eval=FALSE}
+
+# Create veracity variable (1= real, 2= fake, 3= not determined) ----------
+
+dat_claims <- dat_claims %>%
+  mutate(veracity = case_when(
+    label %in% c("half-true", "covid true", "disputed", "mostly true", "MOSTLY TRUE", 
+                 "non conspiracy", "non-covid true", "not misinformation", "real", 
+                 "support", "supported", "supports", "SUPPORTS", "true", "TRUE", "correct", "correct attribution", 
+                 "CORRECT ATTRIBUTION", "true prevention", "true public health response", "mostly-true", "true but", 
+                 "correct", "non-rumor") ~ 1,
+    label %in% c("5g covid conspiracy", "barely-true", "conspiracy", "conspiracy, fake remedy",
+                 "conspiracy, false reporting", "covid fake", "fake", "Fake", "fake cure",
+                 "fake news", "fake remedy", "fake remedy, conspiracy", "fake remedy, false reporting",
+                 "fake treatment", "false", "FALSE", "false and misleading", "false fact or prevention",
+                 "false public health response", "false reporting", "false reporting, conspiracy",
+                 "false reporting, fake remedy", "misinformation", "MISCAPTIONED", "miscaptioned",
+                 "misleading", "misleading/false", "misinformation / conspiracy theory", "mostly false",
+                 "MOSTLY FALSE", "non-covid fake", "not true", "not_supported", "other conspiracy",
+                 "pants on fire", "pants-fire", "refute", "refuted", "refutes", "REFUTES", "scam", "SCAM",
+                 "out-of-context", "partly true/misleading", "unlikely", "False information", "Altered photo", "False information and graphic content") ~ 2,
+    label %in% c("ambiguous or hard to classify", "complicated/hard to categorise", "in dispute",
+                 "mixed", "mixture", "MIXTURE", "not enough info", "NOT ENOUGH INFO", "not_enough_info",
+                 "notenoughinfo", "UNDETERMINED", "(org. doesn't apply rating)", "outdated", 
+                 "OUTDATED", "UNPROVEN", "unproven", "no evidence", "half true", "half truth", 
+                 "partially correct", "partially false", "partially true", "partly false", 
+                 "partly true", "unverified", "Missing context", "Partly false information") ~ 3,
+    label %in% c("barack-obama", "bill-mccollum", "brian-kemp", "calling out or correction", 
+                 "collections", "columbianchemicals", "commercial activity or promotion", 
+                 "doug-macginnitie", "emergency", "explanatory", "irrelevant", "irrevelant", 
+                 "livr", "news", "Not Applicable", "panic buying", "passport", "pigfish", 
+                 "politics", "research in progress", "RESEARCH IN PROGRESS", "two pinocchios", 
+                 "CORRECT ATTRIBUTION", "MISATTRIBUTED", "sarcasm or satire", "counter-misinformation", 
+                 "labeled satire", "misattributed", "other", "lost legend", "LEGEND", "legend", "suspicions") ~ NA_real_
+  ))
+
+```
+
+```{r, warning=FALSE}
+
+# Veracity count - Label Disparity per Dataset ----------------------------
+
+datasets <- unique(dat_claims$dataset)
+
+# List for results
+results_table <- list()
+results_prop <- list()
+
+# Loop
+for (dataset_name in datasets) {
+  current_data <- dat_claims %>% 
+    filter(dataset == dataset_name) %>% 
+    select(where(~ !all(is.na(.))))
+  
+  result_table <- table(current_data$veracity)
+  results_table[[dataset_name]] <- result_table
+  
+  result_prop <- prop.table(result_table) * 100
+  results_prop[[dataset_name]] <- result_prop
+}
+
+# Results
+results_table
+results_prop
+
+```
+
+# Keywords analysis
+
+```{r}
+# 40 most frequently used words by database
+
+datasets_list <- unique(dat_claims$dataset)
+
+for (dataset in datasets_list) {
+  result <- dat_claims %>%
+    filter(dataset == !!dataset, !is.na(claim)) %>%
+    mutate(claim = str_to_lower(claim)) %>%
+    unnest_tokens(word, claim) %>%
+    filter(!word %in% stop_words$word) %>%
+    group_by(dataset, veracity, word) %>%
+    count(name = "n") %>%
+    ungroup() %>%
+    group_by(word) %>%
+    summarize(total = sum(n), .groups = 'drop') %>%
+    arrange(desc(total)) %>%
+    slice_head(n = 40) 
+  
+  result_with_veracity <- dat_claims %>%
+    filter(dataset == !!dataset, !is.na(claim)) %>%
+    mutate(claim = str_to_lower(claim)) %>%
+    unnest_tokens(word, claim) %>%
+    filter(!word %in% stop_words$word) %>%
+    group_by(dataset, veracity, word) %>%
+    count(name = "n") %>%
+    filter(word %in% result$word) %>%
+    ungroup()
+  
+  assign(paste0("frequency_", gsub(" ", "_", dataset)), 
+         result_with_veracity, envir = .GlobalEnv)}
+
+ls(pattern = "^frequency_")
+```
+
+## Check-COVID
+
+### Keywords Predictivity T-F
+
+```{r, warning=FALSE}
+checkcovid_filtered <- dat_claims %>%
+  filter(dataset == "checkcovid") %>%
+  filter(veracity != 3)
+
+frequency_checkcovid_unique <- frequency_checkcovid %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_checkcovid_unique$word
+
+corpus <- Corpus(VectorSource(checkcovid_filtered$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(checkcovid_filtered$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest - Filtered):")
+print(confusion_matrix)
+
+# F1 Macro
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+### Keywords Predictivity T-F-O
+
+```{r, warning=FALSE}
+
+# 3 labels ----------------------------------------------------------------
+
+checkcovid <- dat_claims %>%
+  filter(dataset == "checkcovid")
+
+frequency_checkcovid_unique <- frequency_checkcovid %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_checkcovid_unique$word
+
+corpus <- Corpus(VectorSource(checkcovid$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(checkcovid$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+```
+
+## ClaimsKG
+
+### T-F
+
+```{r, message=FALSE, warning=FALSE}
+
+# 2 labels ----------------------------------------------------------------
+
+claimskg <- dat_claims %>%
+  filter(dataset == "claimskg") %>%
+  filter(veracity != 3)
+
+frequency_claimskg_unique <- frequency_claimskg %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_claimskg_unique$word
+
+corpus <- Corpus(VectorSource(claimskg$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(claimskg$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score for random predictions
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+### T-F-0
+
+```{r, warning=FALSE}
+
+# 3 labels ----------------------------------------------------------------
+
+claimskg <- dat_claims %>%
+  filter(dataset == "claimskg")
+
+frequency_claimskg_unique <- frequency_claimskg %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_claimskg_unique$word
+
+corpus <- Corpus(VectorSource(claimskg$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(claimskg$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+## Climate-Fever
+
+### T-F
+
+```{r, warning=FALSE}
+
+# 2 labels ----------------------------------------------------------------
+
+climate_fever_filtered <- dat_claims %>%
+  filter(dataset == "climate_fever") %>%
+  filter(veracity != 3)
+
+frequency_climate_fever_unique <- frequency_climate_fever %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_climate_fever_unique$word
+
+corpus <- Corpus(VectorSource(climate_fever_filtered$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(climate_fever_filtered$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, 
+                         Y_train,
+                         ntree = 100, 
+                         maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+### T-F-O
+
+```{r, warning=FALSE}
+
+# 3 labels ----------------------------------------------------------------
+
+climate_fever <- dat_claims %>%
+  filter(dataset == "climate_fever")
+
+frequency_climate_fever_unique <- frequency_climate_fever %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_climate_fever_unique$word
+
+corpus <- Corpus(VectorSource(climate_fever$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(climate_fever$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, 
+                         Y_train,
+                         ntree = 100, 
+                         maxnodes = 20)
+
+# Step 6: Make 
+predictions <- predict(rf_model, 
+                       X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), 
+                             size = length(Y_test), 
+                             replace = TRUE, 
+                             prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+## CoAID
+
+### T-F
+
+```{r, warning=FALSE}
+
+# Coaid - 2 labels --------------------------------------------------------
+
+coaid <- dat_claims %>% 
+  filter(dataset == "coaid") %>% 
+  filter(veracity != 3)
+
+frequency_coaid_unique <- frequency_coaid %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_coaid_unique$word
+
+corpus <- Corpus(VectorSource(coaid$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(coaid$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0)}
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score:", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+COAID has no third label (other)
+
+## Covid-19-rumor
+
+### T-F
+
+```{r, warning=FALSE}
+
+# 2 labels ----------------------------------------------------------------
+
+covid_19_rumor_filtered <- dat_claims %>%
+  filter(dataset == "covid_19_rumor") %>%
+  filter(veracity != 3)
+
+frequency_covid_19_rumor_unique <- frequency_covid_19_rumor %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_covid_19_rumor_unique$word
+
+corpus <- Corpus(VectorSource(covid_19_rumor_filtered$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(covid_19_rumor_filtered$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+### T-F-O
+
+```{r, warning=FALSE}
+
+# 3 labels ----------------------------------------------------------------
+
+covid_19_rumor <- dat_claims %>%
+  filter(dataset == "covid_19_rumor")
+
+frequency_covid_19_rumor_unique <- frequency_covid_19_rumor %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_covid_19_rumor_unique$word
+
+corpus <- Corpus(VectorSource(covid_19_rumor$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(covid_19_rumor$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+## Covid-Fact
+
+### T-F
+
+```{r, warning=FALSE}
+
+covidfact <- dat_claims %>%
+  filter(dataset == "covidfact") %>%
+  filter(veracity != 3)
+
+frequency_covidfact_unique <- frequency_covidfact %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_covidfact_unique$word
+
+corpus <- Corpus(VectorSource(covidfact$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(covidfact$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+## DeFakts
+
+### T-F
+
+```{r, warning=FALSE}
+# 2 labels, has not "other"
+defakts <- dat_claims %>%
+  filter(dataset == "defakts")
+
+frequency_defakts_unique <- frequency_defakts %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_defakts_unique$word
+
+corpus <- Corpus(VectorSource(defakts$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("de")) # German language
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(defakts$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+## FakeCovid
+
+### T-F
+
+```{r, warning=FALSE}
+
+fakecovid_filtered <- dat_claims %>%
+  filter(dataset == "fakecovid") %>%
+  filter(veracity != 3)
+
+frequency_fakecovid_unique <- frequency_fakecovid %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_fakecovid_unique$word
+
+corpus <- Corpus(VectorSource(fakecovid_filtered$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(fakecovid_filtered$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+# F1 macro score
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+
+  if (TP == 0) {
+    return(0)  
+  }
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  return(2 * (precision * recall) / (precision + recall))
+})
+
+macro_f1_random <- mean(f1_scores_random, na.rm = TRUE)
+print(paste("Macro F1 Score (random forest):", macro_f1_random))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), 
+                             replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+# F1 macro score
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  if (TP == 0) {
+    return(0) 
+  }
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  return(2 * (precision * recall) / (precision + recall))
+})
+
+macro_f1_random <- mean(f1_scores_random, na.rm = TRUE)
+print(paste("Macro F1 Score (random prediction) :", macro_f1_random))
+```
+
+## T-F-O
+
+```{r, warning=FALSE}
+
+fakecovid <- dat_claims %>%
+  filter(dataset == "fakecovid")
+
+frequency_fakecovid_unique <- frequency_fakecovid %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_fakecovid_unique$word
+
+corpus <- Corpus(VectorSource(fakecovid$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(fakecovid$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), 
+                             replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+# F1 macro score
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  if (TP == 0) {
+    return(0) 
+  }
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  return(2 * (precision * recall) / (precision + recall))
+})
+
+macro_f1_random <- mean(f1_scores_random, na.rm = TRUE)
+print(paste("Macro F1 Score (random prediction):", macro_f1_random))
+```
+
+## FAVIQ
+
+### T-F
+
+```{r, warning=FALSE}
+
+faviq <- dat_claims %>%
+  filter(dataset == "faviq") # has no other
+
+frequency_faviq_unique <- frequency_faviq %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_faviq_unique$word
+
+corpus <- Corpus(VectorSource(faviq$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(faviq$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, 
+                             prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+## FEVER
+
+### T-F
+
+```{r, warning=FALSE}
+
+# 2 labels ----------------------------------------------------------------
+
+fever_filtered <- dat_claims %>%
+  filter(dataset == "fever") %>%
+  filter(veracity != 3)
+
+frequency_fever_unique <- frequency_fever %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_fever_unique$word
+
+corpus <- Corpus(VectorSource(fever_filtered$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(fever_filtered$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+### T-F-O
+
+```{r, warning=FALSE}
+
+# 3 labels ----------------------------------------------------------------
+
+fever <- dat_claims %>%
+  filter(dataset == "fever")
+
+frequency_fever_unique <- frequency_fever %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_fever_unique$word
+
+corpus <- Corpus(VectorSource(fever$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(fever$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+## FEVEROUS
+
+### T-F
+
+```{r, warning=FALSE}
+
+# 2 labels ----------------------------------------------------------------
+
+feverous_filtered <- dat_claims %>%
+  filter(dataset == "feverous") %>%
+  filter(veracity != 3)
+
+frequency_feverous_unique <- frequency_feverous %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_feverous_unique$word
+
+corpus <- Corpus(VectorSource(feverous_filtered$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(feverous_filtered$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+### T-F-O
+
+```{r, warning=FALSE}
+
+# 3 labels ----------------------------------------------------------------
+
+feverous <- dat_claims %>%
+  filter(dataset == "feverous")
+
+frequency_feverous_unique <- frequency_feverous %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_feverous_unique$word
+
+corpus <- Corpus(VectorSource(feverous$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(feverous$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), 
+                             replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+## FibVID
+
+### T-F
+
+```{r, warning=FALSE}
+
+fibvid <- dat_claims %>% # Has only two labels
+  filter(dataset == "fibvid")
+
+frequency_fibvid_unique <- frequency_fibvid %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_fibvid_unique$word
+
+corpus <- Corpus(VectorSource(fibvid$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(fibvid$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score for random predictions
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+```
+
+## HoVer
+
+### T-F
+
+```{r, warning=FALSE}
+
+hover <- dat_claims %>% # Has only two labels T-F
+  filter(dataset == "hover")
+
+frequency_hover_unique <- frequency_hover %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_hover_unique$word
+
+corpus <- Corpus(VectorSource(hover$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(hover$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+```
+
+## IFND
+
+### T-F
+
+```{r, warning=FALSE}
+
+IFND <- dat_claims %>%
+  filter(dataset == "IFND") # Only two labels in the dataset
+
+frequency_IFND_unique <- frequency_IFND %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_IFND_unique$word
+
+corpus <- Corpus(VectorSource(IFND$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(IFND$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), 
+                             size = length(Y_test), 
+                             replace = TRUE, 
+                             prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, 
+                                 Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+
+```
+
+## LIAR
+
+## T-F
+
+```{r, warning=FALSE}
+
+liar <- dat_claims %>%
+  filter(dataset == "liar") # Only has 2 labels
+
+frequency_liar_unique <- frequency_liar %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_liar_unique$word
+
+corpus <- Corpus(VectorSource(liar$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(liar$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+## LIAR-NEW
+
+```{r, warning=FALSE}
+
+liar_new <- dat_claims %>%
+  filter(dataset == "liar_new") # Two labels
+
+frequency_liar_new_unique <- frequency_liar_new %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_liar_new_unique$word
+
+corpus <- Corpus(VectorSource(liar_new$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(liar_new$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, 
+                                   list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, 
+                         Y_train, 
+                         ntree = 100, 
+                         maxnodes = 20)
+
+predictions <- predict(rf_model, 
+                       X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), 
+                             size = length(Y_test), 
+                             replace = TRUE, 
+                             prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+```
+
+## MM-COVID
+
+## T-F
+
+```{r, warning=FALSE}
+
+## Has 2 labels
+
+mm_covid <- dat_claims %>%
+  filter(dataset == "mm-covid")
+
+frequency_mm_covid_unique <- `frequency_mm-covid` %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_mm_covid_unique$word
+
+corpus <- Corpus(VectorSource(mm_covid$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(mm_covid$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), 
+                             size = length(Y_test), 
+                             replace = TRUE, 
+                             prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+## NLP4OF-2021
+
+### T-F
+
+```{r, warning=FALSE}
+
+## Dataset
+nlp4if <- dat_claims %>%
+  filter(dataset == "nlp4if") # Two labels
+
+## Top 40 keywords
+frequency_nlp4if_unique <- frequency_nlp4if %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_nlp4if_unique$word
+
+## Corpus
+corpus <- Corpus(VectorSource(nlp4if$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(nlp4if$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+## Split - Training and Test
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+## Predictions
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+## F1 Score
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score - With frenquency of labels
+# ----------------------
+
+## Addind frequency of each class in the random forest classifier
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), 
+                             size = length(Y_test), 
+                             replace = TRUE, 
+                             prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, 
+                                 Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+## PubHealthTab
+
+### T-F
+
+```{r, warning=FALSE}
+
+# 2 labels ----------------------------------------------------------------
+
+pubhealthtab <- dat_claims %>% 
+  filter(dataset == "pubhealthtab") %>% 
+  filter(!is.na(claim) & claim != "") %>% 
+  filter(veracity != 3)
+
+frequency_pubhealthtab_unique <- frequency_pubhealthtab %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_pubhealthtab_unique$word
+
+corpus <- Corpus(VectorSource(pubhealthtab$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(pubhealthtab$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, 
+                                   list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, 
+                         Y_train, 
+                         ntree = 100, 
+                         maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, 
+                          Y_test)
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0)}
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score:", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+
+```
+
+### T-F-O
+
+```{r, warning=FALSE}
+
+# 3 labels ----------------------------------------------------------------
+
+pubhealthtab <- dat_claims %>% 
+  filter(dataset == "pubhealthtab") %>% 
+  filter(!is.na(claim) & claim != "")
+
+frequency_pubhealthtab_unique <- frequency_pubhealthtab %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_pubhealthtab_unique$word
+
+corpus <- Corpus(VectorSource(pubhealthtab$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(pubhealthtab$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, 
+                                   list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, 
+                         Y_train, 
+                         ntree = 100, 
+                         maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, 
+                          Y_test)
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0)}
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+
+print(paste("Macro F1 Score (random forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+## Rumors
+
+### T-F
+
+```{r, warning=FALSE}
+
+# 2 labels ----------------------------------------------------------------
+
+rumors_filtered <- dat_claims %>%
+  filter(dataset == "rumors") %>%
+  filter(veracity != 3)
+
+frequency_rumors_unique <- frequency_rumors %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords_rumors <- frequency_rumors_unique$word
+
+corpus_rumors <- Corpus(VectorSource(rumors_filtered$claim))
+corpus_rumors <- tm_map(corpus_rumors, content_transformer(tolower))
+corpus_rumors <- tm_map(corpus_rumors, removePunctuation)
+corpus_rumors <- tm_map(corpus_rumors, removeNumbers)
+corpus_rumors <- tm_map(corpus_rumors, removeWords, stopwords("en"))
+corpus_rumors <- tm_map(corpus_rumors, stripWhitespace)
+
+dtm_rumors <- DocumentTermMatrix(corpus_rumors, 
+                                 control = list(dictionary = top_keywords_rumors, 
+                                                               binary = TRUE))
+dtm_matrix_rumors <- as.matrix(dtm_rumors)
+
+keyword_df_rumors <- as.data.frame(dtm_matrix_rumors)
+
+X_rumors <- keyword_df_rumors
+Y_rumors <- as.factor(rumors_filtered$veracity)
+
+valid_indices_rumors <- which(!is.na(Y_rumors))
+X_rumors <- X_rumors[valid_indices_rumors, ]
+Y_rumors <- Y_rumors[valid_indices_rumors]
+
+set.seed(42)
+train_index_rumors <- createDataPartition(Y_rumors, p = 0.75, list = FALSE)
+X_train_rumors <- X_rumors[train_index_rumors, ]
+Y_train_rumors <- Y_rumors[train_index_rumors]
+X_test_rumors <- X_rumors[-train_index_rumors, ]
+Y_test_rumors <- Y_rumors[-train_index_rumors]
+
+rf_model_rumors <- randomForest(X_train_rumors, Y_train_rumors, ntree = 100, maxnodes = 20)
+
+predictions_rumors <- predict(rf_model_rumors, X_test_rumors)
+
+confusion_matrix_rumors <- table(predictions_rumors, Y_test_rumors)
+print("Confusion Matrix (Random Forest - Rumors):")
+print(confusion_matrix_rumors)
+
+f1_scores_rumors <- sapply(levels(Y_test_rumors), function(class) {
+  TP <- confusion_matrix_rumors[class, class]
+  FP <- sum(confusion_matrix_rumors[, class]) - TP
+  FN <- sum(confusion_matrix_rumors[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_rumors <- mean(f1_scores_rumors)
+print(paste("Macro F1 Score (Random Forest - Rumors):", macro_f1_rumors))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions for rumors
+# ----------------------
+
+class_distribution_rumors <- prop.table(table(Y_rumors))
+random_predictions_rumors <- sample(levels(Y_rumors), 
+                                    size = length(Y_test_rumors), 
+                                    replace = TRUE, 
+                                    prob = class_distribution_rumors)
+
+confusion_matrix_random_rumors <- table(random_predictions_rumors, Y_test_rumors)
+
+f1_scores_random_rumors <- sapply(levels(Y_test_rumors), function(class) {
+  TP <- confusion_matrix_random_rumors[class, class]
+  FP <- sum(confusion_matrix_random_rumors[, class]) - TP
+  FN <- sum(confusion_matrix_random_rumors[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random_rumors <- mean(f1_scores_random_rumors)
+print(paste("Macro F1 Score (Random Predictions - Rumors):", macro_f1_random_rumors))
+
+```
+
+### T-F-O
+
+```{r, warning=FALSE}
+# 3 labels ----------------------------------------------------------------
+
+rumors_filtered_no_filter <- dat_claims %>%
+  filter(dataset == "rumors") 
+
+frequency_rumors_unique <- frequency_rumors %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords_rumors_no_filter <- frequency_rumors_unique$word
+
+corpus_rumors_no_filter <- Corpus(VectorSource(rumors_filtered_no_filter$claim))
+corpus_rumors_no_filter <- tm_map(corpus_rumors_no_filter, content_transformer(tolower))
+corpus_rumors_no_filter <- tm_map(corpus_rumors_no_filter, removePunctuation)
+corpus_rumors_no_filter <- tm_map(corpus_rumors_no_filter, removeNumbers)
+corpus_rumors_no_filter <- tm_map(corpus_rumors_no_filter, removeWords, stopwords("en"))
+corpus_rumors_no_filter <- tm_map(corpus_rumors_no_filter, stripWhitespace)
+
+dtm_rumors_no_filter <- DocumentTermMatrix(corpus_rumors_no_filter, control = list(dictionary = top_keywords_rumors_no_filter, 
+                                                                                   binary = TRUE))
+dtm_matrix_rumors_no_filter <- as.matrix(dtm_rumors_no_filter)
+
+keyword_df_rumors_no_filter <- as.data.frame(dtm_matrix_rumors_no_filter)
+
+X_rumors_no_filter <- keyword_df_rumors_no_filter
+Y_rumors_no_filter <- as.factor(rumors_filtered_no_filter$veracity)
+
+valid_indices_rumors_no_filter <- which(!is.na(Y_rumors_no_filter))
+X_rumors_no_filter <- X_rumors_no_filter[valid_indices_rumors_no_filter, ]
+Y_rumors_no_filter <- Y_rumors_no_filter[valid_indices_rumors_no_filter]
+
+set.seed(42)
+train_index_rumors_no_filter <- createDataPartition(Y_rumors_no_filter, p = 0.75, list = FALSE)
+X_train_rumors_no_filter <- X_rumors_no_filter[train_index_rumors_no_filter, ]
+Y_train_rumors_no_filter <- Y_rumors_no_filter[train_index_rumors_no_filter]
+X_test_rumors_no_filter <- X_rumors_no_filter[-train_index_rumors_no_filter, ]
+Y_test_rumors_no_filter <- Y_rumors_no_filter[-train_index_rumors_no_filter]
+
+rf_model_rumors_no_filter <- randomForest(X_train_rumors_no_filter, Y_train_rumors_no_filter, ntree = 100, maxnodes = 20)
+
+predictions_rumors_no_filter <- predict(rf_model_rumors_no_filter, X_test_rumors_no_filter)
+
+confusion_matrix_rumors_no_filter <- table(predictions_rumors_no_filter, Y_test_rumors_no_filter)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix_rumors_no_filter)
+
+f1_scores_rumors_no_filter <- sapply(levels(Y_test_rumors_no_filter), function(class) {
+  TP <- confusion_matrix_rumors_no_filter[class, class]
+  FP <- sum(confusion_matrix_rumors_no_filter[, class]) - TP
+  FN <- sum(confusion_matrix_rumors_no_filter[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  # NaN handling
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  # F1 Score
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_rumors_no_filter <- mean(f1_scores_rumors_no_filter)
+print(paste("Macro F1 Score (Random Forest):", 
+            macro_f1_rumors_no_filter))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions for rumors without filtering
+# ----------------------
+
+class_distribution_rumors_no_filter <- prop.table(table(Y_rumors_no_filter))
+random_predictions_rumors_no_filter <- sample(levels(Y_rumors_no_filter), 
+                                              size = length(Y_test_rumors_no_filter), 
+                                              replace = TRUE, 
+                                              prob = class_distribution_rumors_no_filter)
+
+confusion_matrix_random_rumors_no_filter <- table(random_predictions_rumors_no_filter, 
+                                                  Y_test_rumors_no_filter)
+
+f1_scores_random_rumors_no_filter <- sapply(levels(Y_test_rumors_no_filter), function(class) {
+  TP <- confusion_matrix_random_rumors_no_filter[class, class]
+  FP <- sum(confusion_matrix_random_rumors_no_filter[, class]) - TP
+  FN <- sum(confusion_matrix_random_rumors_no_filter[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random_rumors_no_filter <- mean(f1_scores_random_rumors_no_filter)
+print(paste("Macro F1 Score (Random Predictions):", 
+            macro_f1_random_rumors_no_filter))
+
+```
+
+## Snopes
+
+## T-F
+
+```{r, warning=FALSE}
+
+# 2 labels ----------------------------------------------------------------
+
+snopes_filtered <- dat_claims %>%
+  filter(dataset == "snopes") %>%
+  filter(veracity != 3)
+
+frequency_snopes_unique <- frequency_snopes %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_snopes_unique$word
+
+corpus <- Corpus(VectorSource(snopes_filtered$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(snopes_filtered$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), 
+                             replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+### T-F-O
+
+```{r, warning=FALSE}
+
+# 3 labels ----------------------------------------------------------------
+
+snopes <- dat_claims %>%
+  filter(dataset == "snopes")
+
+frequency_snopes_unique <- frequency_snopes %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_snopes_unique$word
+
+corpus <- Corpus(VectorSource(snopes$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(snopes$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+## Truthseeker2023
+
+```{r, warning=FALSE}
+
+truthseeker2023 <- dat_claims %>%
+  filter(dataset == "truthseeker2023") # Has only two labels
+
+frequency_truthseeker2023_unique <- frequency_truthseeker2023 %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_truthseeker2023_unique$word
+
+corpus <- Corpus(VectorSource(truthseeker2023$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(truthseeker2023$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), 
+                             size = length(Y_test), 
+                             replace = TRUE, 
+                             prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+## Twitter15
+
+### T-F
+
+```{r, warning=FALSE}
+
+# 2 labels ----------------------------------------------------------------
+
+twitter15 <- dat_claims %>% 
+  filter(dataset == "twitter15") %>% 
+  filter(!is.na(claim) & claim != "") %>% 
+  filter(veracity != 3)
+
+# Top 40 keywords
+frequency_twitter15_unique <- frequency_twitter15 %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_twitter15_unique$word
+
+corpus <- Corpus(VectorSource(twitter15$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(twitter15$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, 
+                                   list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, 
+                         Y_train, 
+                         ntree = 100, 
+                         maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, 
+                          Y_test)
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0)}
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+
+print(paste("Macro F1 Score (random forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), 
+                             replace = TRUE, prob = class_distribution)
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+### T-F-0
+
+```{r, warning=FALSE}
+
+# 3 labels ----------------------------------------------------------------
+
+twitter15 <- dat_claims %>% 
+  filter(dataset == "twitter15") %>% 
+  filter(!is.na(claim) & claim != "")
+
+frequency_twitter15_unique <- frequency_twitter15 %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_twitter15_unique$word
+
+corpus <- Corpus(VectorSource(twitter15$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(twitter15$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, 
+                                   list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, 
+                         Y_train, 
+                         ntree = 100, 
+                         maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, 
+                          Y_test)
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0)}
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+
+# F1 Score macro
+print(paste("Macro F1 Score (random forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), 
+                             size = length(Y_test), 
+                             replace = TRUE, 
+                             prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  # F1 Score
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+
+```
+
+## Twitter16
+
+### T-F
+
+```{r, warning=FALSE}
+
+# 2 labels ----------------------------------------------------------------
+
+twitter16 <- dat_claims %>% 
+  filter(dataset == "twitter16") %>% 
+  filter(!is.na(claim) & claim != "") %>% 
+  filter(veracity != 3)
+
+frequency_twitter16_unique <- frequency_twitter16 %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_twitter16_unique$word
+
+corpus <- Corpus(VectorSource(twitter16$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(twitter16$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0)}
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+
+print(paste("Macro F1 Score (random forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+
+```
+
+### T-F-O
+
+```{r, warning=FALSE}
+
+# 3 labels ----------------------------------------------------------------
+
+twitter16 <- dat_claims %>% 
+  filter(dataset == "twitter16") %>% 
+  filter(!is.na(claim) & claim != "")
+
+frequency_twitter16_unique <- frequency_twitter16 %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_twitter16_unique$word
+
+corpus <- Corpus(VectorSource(twitter16$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(twitter16$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0)}
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+
+print(paste("Macro F1 Score:", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions - Unfiltered):", macro_f1_random))
+
+```
+
+## VERITE
+
+### T-F
+
+```{r, warning=FALSE}
+
+verite <- dat_claims %>%
+  filter(dataset == "verite") # has only 2 labels
+
+frequency_verite_unique <- frequency_verite %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_verite_unique$word
+
+corpus <- Corpus(VectorSource(verite$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(verite$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score for random predictions
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+## X-Fact
+
+### T-F
+
+```{r, warning=FALSE}
+
+# 2 labels ----------------------------------------------------------------
+
+x_fact_filtered <- dat_claims %>%
+  filter(dataset == "x_fact") %>%
+  filter(veracity != 3)
+
+frequency_x_fact_unique <- frequency_x_fact %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_x_fact_unique$word
+
+corpus <- Corpus(VectorSource(x_fact_filtered$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(x_fact_filtered$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
+
+### T-F-O
+
+```{r, warning=FALSE}
+
+# 3 labels ----------------------------------------------------------------
+
+x_fact <- dat_claims %>%
+  filter(dataset == "x_fact")
+
+frequency_x_fact_unique <- frequency_x_fact %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_x_fact_unique$word
+
+corpus <- Corpus(VectorSource(x_fact$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(x_fact$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+# Macro F1 Score
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1_random <- mean(f1_scores_random)
+print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
+
+```
