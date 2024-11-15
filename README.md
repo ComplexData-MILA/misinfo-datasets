@@ -1,6 +1,6 @@
 # misinfo-datasets
 
-Label unification and keyword analysis: `keywords_analysis_R.R`
+Label unification and keyword analysis: `keywords_analysis.R`
 
 Temporal correlations analysis: `temporal_correlations.ipynb`
 
