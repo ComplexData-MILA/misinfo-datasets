@@ -1,5 +1,5 @@
 ---
-title: "# CODES - A GUIDE TO MISINFORMATION DETECTION DATASET - Keywords"
+title: "# CODES - A GUIDE TO MISINFORMATION DETECTION DATASET"
 format: pdf
 editor: visual
 ---
@@ -31,7 +31,7 @@ library(patchwork)
 
 # Data - Claims --------------------------------------------------------------------
 
-dat_claims <- read_csv("C:/Users/client/Desktop/datasets/2024-08-23_dat_claims.csv")
+dat_claims <- read_csv("C:/Users/client/Desktop/datasets/all_data/dat_claims.csv")
 
 # See all datasets --------------------------------------------------------
 
@@ -42,44 +42,6 @@ dat_claims %>%
 ```
 
 # Labels
-
-```{r, eval=FALSE}
-
-# Create veracity variable (1= real, 2= fake, 3= not determined) ----------
-
-dat_claims <- dat_claims %>%
-  mutate(veracity = case_when(
-    label %in% c("half-true", "covid true", "disputed", "mostly true", "MOSTLY TRUE", 
-                 "non conspiracy", "non-covid true", "not misinformation", "real", 
-                 "support", "supported", "supports", "SUPPORTS", "true", "TRUE", "correct", "correct attribution", 
-                 "CORRECT ATTRIBUTION", "true prevention", "true public health response", "mostly-true", "true but", 
-                 "correct", "non-rumor") ~ 1,
-    label %in% c("5g covid conspiracy", "barely-true", "conspiracy", "conspiracy, fake remedy",
-                 "conspiracy, false reporting", "covid fake", "fake", "Fake", "fake cure",
-                 "fake news", "fake remedy", "fake remedy, conspiracy", "fake remedy, false reporting",
-                 "fake treatment", "false", "FALSE", "false and misleading", "false fact or prevention",
-                 "false public health response", "false reporting", "false reporting, conspiracy",
-                 "false reporting, fake remedy", "misinformation", "MISCAPTIONED", "miscaptioned",
-                 "misleading", "misleading/false", "misinformation / conspiracy theory", "mostly false",
-                 "MOSTLY FALSE", "non-covid fake", "not true", "not_supported", "other conspiracy",
-                 "pants on fire", "pants-fire", "refute", "refuted", "refutes", "REFUTES", "scam", "SCAM",
-                 "out-of-context", "partly true/misleading", "unlikely", "False information", "Altered photo", "False information and graphic content") ~ 2,
-    label %in% c("ambiguous or hard to classify", "complicated/hard to categorise", "in dispute",
-                 "mixed", "mixture", "MIXTURE", "not enough info", "NOT ENOUGH INFO", "not_enough_info",
-                 "notenoughinfo", "UNDETERMINED", "(org. doesn't apply rating)", "outdated", 
-                 "OUTDATED", "UNPROVEN", "unproven", "no evidence", "half true", "half truth", 
-                 "partially correct", "partially false", "partially true", "partly false", 
-                 "partly true", "unverified", "Missing context", "Partly false information") ~ 3,
-    label %in% c("barack-obama", "bill-mccollum", "brian-kemp", "calling out or correction", 
-                 "collections", "columbianchemicals", "commercial activity or promotion", 
-                 "doug-macginnitie", "emergency", "explanatory", "irrelevant", "irrevelant", 
-                 "livr", "news", "Not Applicable", "panic buying", "passport", "pigfish", 
-                 "politics", "research in progress", "RESEARCH IN PROGRESS", "two pinocchios", 
-                 "CORRECT ATTRIBUTION", "MISATTRIBUTED", "sarcasm or satire", "counter-misinformation", 
-                 "labeled satire", "misattributed", "other", "lost legend", "LEGEND", "legend", "suspicions") ~ NA_real_
-  ))
-
-```
 
 ```{r, warning=FALSE}
 
@@ -107,6 +69,7 @@ for (dataset_name in datasets) {
 # Results
 results_table
 results_prop
+
 
 ```
 
@@ -245,14 +208,15 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 ```
 
-### Keywords Predictivity T-F-O
+### Keywords Predictivity T-F-M
 
 ```{r, warning=FALSE}
 
 # 3 labels ----------------------------------------------------------------
 
 checkcovid <- dat_claims %>%
-  filter(dataset == "checkcovid")
+  filter(dataset == "checkcovid") %>% 
+  filter(!veracity %in% c(3, 9))
 
 frequency_checkcovid_unique <- frequency_checkcovid %>%
   distinct(word, .keep_all = TRUE)
@@ -350,7 +314,7 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 claimskg <- dat_claims %>%
   filter(dataset == "claimskg") %>%
-  filter(veracity != 3)
+  filter(!veracity %in% c(3, 9))
 
 frequency_claimskg_unique <- frequency_claimskg %>%
   distinct(word, .keep_all = TRUE)
@@ -440,14 +404,15 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 ```
 
-### T-F-0
+### T-F-M
 
 ```{r, warning=FALSE}
 
 # 3 labels ----------------------------------------------------------------
 
 claimskg <- dat_claims %>%
-  filter(dataset == "claimskg")
+  filter(dataset == "claimskg") %>% 
+  filter(veracity != 9)
 
 frequency_claimskg_unique <- frequency_claimskg %>%
   distinct(word, .keep_all = TRUE)
@@ -546,7 +511,7 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 climate_fever_filtered <- dat_claims %>%
   filter(dataset == "climate_fever") %>%
-  filter(veracity != 3)
+  filter(!veracity %in% c(3, 9))
 
 frequency_climate_fever_unique <- frequency_climate_fever %>%
   distinct(word, .keep_all = TRUE)
@@ -639,14 +604,15 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 ```
 
-### T-F-O
+### T-F-M
 
 ```{r, warning=FALSE}
 
 # 3 labels ----------------------------------------------------------------
 
 climate_fever <- dat_claims %>%
-  filter(dataset == "climate_fever")
+  filter(dataset == "climate_fever") %>% 
+  filter(veracity != 9)
 
 frequency_climate_fever_unique <- frequency_climate_fever %>%
   distinct(word, .keep_all = TRUE)
@@ -753,7 +719,7 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 coaid <- dat_claims %>% 
   filter(dataset == "coaid") %>% 
-  filter(veracity != 3)
+  filter(!veracity %in% c(3, 9))
 
 frequency_coaid_unique <- frequency_coaid %>%
   distinct(word, .keep_all = TRUE)
@@ -841,7 +807,7 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 ```
 
-COAID has no third label (other)
+COAID has no third label (Mixed)
 
 ## Covid-19-rumor
 
@@ -853,7 +819,7 @@ COAID has no third label (other)
 
 covid_19_rumor_filtered <- dat_claims %>%
   filter(dataset == "covid_19_rumor") %>%
-  filter(veracity != 3)
+  filter(!veracity %in% c(3, 9))
 
 frequency_covid_19_rumor_unique <- frequency_covid_19_rumor %>%
   distinct(word, .keep_all = TRUE)
@@ -942,14 +908,15 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 ```
 
-### T-F-O
+### T-F-M - No label Mixed
 
 ```{r, warning=FALSE}
 
 # 3 labels ----------------------------------------------------------------
 
 covid_19_rumor <- dat_claims %>%
-  filter(dataset == "covid_19_rumor")
+  filter(dataset == "covid_19_rumor") %>% 
+  filter(veracity != 9)
 
 frequency_covid_19_rumor_unique <- frequency_covid_19_rumor %>%
   distinct(word, .keep_all = TRUE)
@@ -1046,7 +1013,7 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 covidfact <- dat_claims %>%
   filter(dataset == "covidfact") %>%
-  filter(veracity != 3)
+  filter(!veracity %in% c(3, 9))
 
 frequency_covidfact_unique <- frequency_covidfact %>%
   distinct(word, .keep_all = TRUE)
@@ -1141,9 +1108,10 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 ### T-F
 
 ```{r, warning=FALSE}
-# 2 labels, has not "other"
+# 2 labels, has not "mixed"
 defakts <- dat_claims %>%
-  filter(dataset == "defakts")
+  filter(dataset == "defakts") %>% 
+  filter(!veracity %in% c(3, 9))
 
 frequency_defakts_unique <- frequency_defakts %>%
   distinct(word, .keep_all = TRUE)
@@ -1240,7 +1208,7 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 fakecovid_filtered <- dat_claims %>%
   filter(dataset == "fakecovid") %>%
-  filter(veracity != 3)
+  filter(!veracity %in% c(3, 9))
 
 frequency_fakecovid_unique <- frequency_fakecovid %>%
   distinct(word, .keep_all = TRUE)
@@ -1340,12 +1308,13 @@ macro_f1_random <- mean(f1_scores_random, na.rm = TRUE)
 print(paste("Macro F1 Score (random prediction) :", macro_f1_random))
 ```
 
-## T-F-O
+## T-F-M
 
 ```{r, warning=FALSE}
 
 fakecovid <- dat_claims %>%
-  filter(dataset == "fakecovid")
+  filter(dataset == "fakecovid") %>% 
+  filter(veracity != 9)
 
 frequency_fakecovid_unique <- frequency_fakecovid %>%
   distinct(word, .keep_all = TRUE)
@@ -1447,7 +1416,8 @@ print(paste("Macro F1 Score (random prediction):", macro_f1_random))
 ```{r, warning=FALSE}
 
 faviq <- dat_claims %>%
-  filter(dataset == "faviq") # has no other
+  filter(dataset == "faviq") %>% # has no other
+  filter(!veracity %in% c(3, 9))
 
 frequency_faviq_unique <- frequency_faviq %>%
   distinct(word, .keep_all = TRUE)
@@ -1548,7 +1518,7 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 fever_filtered <- dat_claims %>%
   filter(dataset == "fever") %>%
-  filter(veracity != 3)
+  filter(!veracity %in% c(3, 9))
 
 frequency_fever_unique <- frequency_fever %>%
   distinct(word, .keep_all = TRUE)
@@ -1637,103 +1607,6 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 ```
 
-### T-F-O
-
-```{r, warning=FALSE}
-
-# 3 labels ----------------------------------------------------------------
-
-fever <- dat_claims %>%
-  filter(dataset == "fever")
-
-frequency_fever_unique <- frequency_fever %>%
-  distinct(word, .keep_all = TRUE)
-
-top_keywords <- frequency_fever_unique$word
-
-corpus <- Corpus(VectorSource(fever$claim))
-corpus <- tm_map(corpus, content_transformer(tolower))
-corpus <- tm_map(corpus, removePunctuation)
-corpus <- tm_map(corpus, removeNumbers)
-corpus <- tm_map(corpus, removeWords, stopwords("en"))
-corpus <- tm_map(corpus, stripWhitespace)
-
-
-dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
-                                                 binary = TRUE))
-dtm_matrix <- as.matrix(dtm)
-
-keyword_df <- as.data.frame(dtm_matrix)
-
-X <- keyword_df
-Y <- as.factor(fever$veracity)
-
-valid_indices <- which(!is.na(Y))
-X <- X[valid_indices, ]
-Y <- Y[valid_indices]
-
-set.seed(42)
-train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
-X_train <- X[train_index, ]
-Y_train <- Y[train_index]
-X_test <- X[-train_index, ]
-Y_test <- Y[-train_index]
-
-rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
-
-predictions <- predict(rf_model, X_test)
-
-confusion_matrix <- table(predictions, Y_test)
-print("Confusion Matrix (Random Forest):")
-print(confusion_matrix)
-
-f1_scores <- sapply(levels(Y_test), function(class) {
-  TP <- confusion_matrix[class, class]
-  FP <- sum(confusion_matrix[, class]) - TP
-  FN <- sum(confusion_matrix[class, ]) - TP
-  
-  precision <- TP / (TP + FP)
-  recall <- TP / (TP + FN)
-  
-  if (is.nan(precision) || is.nan(recall)) {
-    return(0) 
-  }
-  
-  2 * (precision * recall) / (precision + recall)
-})
-
-macro_f1 <- mean(f1_scores)
-print(paste("Macro F1 Score (Random Forest):", macro_f1))
-
-# ----------------------
-# Calculate the baseline F1-score with random predictions
-# ----------------------
-
-class_distribution <- prop.table(table(Y))
-random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
-
-confusion_matrix_random <- table(random_predictions, Y_test)
-
-f1_scores_random <- sapply(levels(Y_test), function(class) {
-  TP <- confusion_matrix_random[class, class]
-  FP <- sum(confusion_matrix_random[, class]) - TP
-  FN <- sum(confusion_matrix_random[class, ]) - TP
-  
-  precision <- TP / (TP + FP)
-  recall <- TP / (TP + FN)
-  
-  if (is.nan(precision) || is.nan(recall)) {
-    return(0) 
-  }
-  
-  2 * (precision * recall) / (precision + recall)
-})
-
-macro_f1_random <- mean(f1_scores_random)
-print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
-
-```
-
 ## FEVEROUS
 
 ### T-F
@@ -1744,7 +1617,7 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 feverous_filtered <- dat_claims %>%
   filter(dataset == "feverous") %>%
-  filter(veracity != 3)
+  filter(!veracity %in% c(3, 9))
 
 frequency_feverous_unique <- frequency_feverous %>%
   distinct(word, .keep_all = TRUE)
@@ -1832,102 +1705,6 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 ```
 
-### T-F-O
-
-```{r, warning=FALSE}
-
-# 3 labels ----------------------------------------------------------------
-
-feverous <- dat_claims %>%
-  filter(dataset == "feverous")
-
-frequency_feverous_unique <- frequency_feverous %>%
-  distinct(word, .keep_all = TRUE)
-
-top_keywords <- frequency_feverous_unique$word
-
-corpus <- Corpus(VectorSource(feverous$claim))
-corpus <- tm_map(corpus, content_transformer(tolower))
-corpus <- tm_map(corpus, removePunctuation)
-corpus <- tm_map(corpus, removeNumbers)
-corpus <- tm_map(corpus, removeWords, stopwords("en"))
-corpus <- tm_map(corpus, stripWhitespace)
-
-dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, binary = TRUE))
-dtm_matrix <- as.matrix(dtm)
-
-keyword_df <- as.data.frame(dtm_matrix)
-
-X <- keyword_df
-Y <- as.factor(feverous$veracity)
-
-valid_indices <- which(!is.na(Y))
-X <- X[valid_indices, ]
-Y <- Y[valid_indices]
-
-set.seed(42)
-train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
-X_train <- X[train_index, ]
-Y_train <- Y[train_index]
-X_test <- X[-train_index, ]
-Y_test <- Y[-train_index]
-
-rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
-
-predictions <- predict(rf_model, X_test)
-
-confusion_matrix <- table(predictions, Y_test)
-print("Confusion Matrix (Random Forest):")
-print(confusion_matrix)
-
-f1_scores <- sapply(levels(Y_test), function(class) {
-  TP <- confusion_matrix[class, class]
-  FP <- sum(confusion_matrix[, class]) - TP
-  FN <- sum(confusion_matrix[class, ]) - TP
-  
-  precision <- TP / (TP + FP)
-  recall <- TP / (TP + FN)
-  
-  if (is.nan(precision) || is.nan(recall)) {
-    return(0) 
-  }
-  
-  2 * (precision * recall) / (precision + recall)
-})
-
-macro_f1 <- mean(f1_scores)
-print(paste("Macro F1 Score (Random Forest):", macro_f1))
-
-# ----------------------
-# Calculate the baseline F1-score with random predictions
-# ----------------------
-
-class_distribution <- prop.table(table(Y))
-random_predictions <- sample(levels(Y), size = length(Y_test), 
-                             replace = TRUE, prob = class_distribution)
-
-confusion_matrix_random <- table(random_predictions, Y_test)
-
-f1_scores_random <- sapply(levels(Y_test), function(class) {
-  TP <- confusion_matrix_random[class, class]
-  FP <- sum(confusion_matrix_random[, class]) - TP
-  FN <- sum(confusion_matrix_random[class, ]) - TP
-  
-  precision <- TP / (TP + FP)
-  recall <- TP / (TP + FN)
-  
-  if (is.nan(precision) || is.nan(recall)) {
-    return(0) 
-  }
-  
-  2 * (precision * recall) / (precision + recall)
-})
-
-macro_f1_random <- mean(f1_scores_random)
-print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
-
-```
-
 ## FibVID
 
 ### T-F
@@ -1935,7 +1712,8 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 ```{r, warning=FALSE}
 
 fibvid <- dat_claims %>% # Has only two labels
-  filter(dataset == "fibvid")
+  filter(dataset == "fibvid") %>% 
+  filter(!veracity %in% c(3, 9))
 
 frequency_fibvid_unique <- frequency_fibvid %>%
   distinct(word, .keep_all = TRUE)
@@ -2032,7 +1810,8 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 ```{r, warning=FALSE}
 
 hover <- dat_claims %>% # Has only two labels T-F
-  filter(dataset == "hover")
+  filter(dataset == "hover") %>% 
+  filter(!veracity %in% c(3, 9))
 
 frequency_hover_unique <- frequency_hover %>%
   distinct(word, .keep_all = TRUE)
@@ -2128,7 +1907,8 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 ```{r, warning=FALSE}
 
 IFND <- dat_claims %>%
-  filter(dataset == "IFND") # Only two labels in the dataset
+  filter(dataset == "IFND") %>% # Only two labels in the dataset
+  filter(!veracity %in% c(3, 9))
 
 frequency_IFND_unique <- frequency_IFND %>%
   distinct(word, .keep_all = TRUE)
@@ -2229,7 +2009,8 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 ```{r, warning=FALSE}
 
 liar <- dat_claims %>%
-  filter(dataset == "liar") # Only has 2 labels
+  filter(dataset == "liar") %>% 
+  filter(!veracity %in% c(3, 9))
 
 frequency_liar_unique <- frequency_liar %>%
   distinct(word, .keep_all = TRUE)
@@ -2318,12 +2099,115 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 ```
 
+## T-F-M
+
+```{r}
+liar <- dat_claims %>%
+  filter(dataset == "liar") %>% 
+  filter(veracity != 9)
+
+frequency_liar_unique <- frequency_liar %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_liar_unique$word
+
+corpus <- Corpus(VectorSource(liar$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(liar$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), 
+                             replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+# F1 macro score
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  if (TP == 0) {
+    return(0) 
+  }
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  return(2 * (precision * recall) / (precision + recall))
+})
+
+macro_f1_random <- mean(f1_scores_random, na.rm = TRUE)
+print(paste("Macro F1 Score (random prediction):", macro_f1_random))
+```
+
 ## LIAR-NEW
+
+### T-F
 
 ```{r, warning=FALSE}
 
 liar_new <- dat_claims %>%
-  filter(dataset == "liar_new") # Two labels
+  filter(dataset == "liar_new") %>% 
+  filter(!veracity %in% c(3, 9))
 
 frequency_liar_new_unique <- frequency_liar_new %>%
   distinct(word, .keep_all = TRUE)
@@ -2419,6 +2303,106 @@ macro_f1_random <- mean(f1_scores_random)
 print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 ```
 
+### T-F-M
+
+```{r}
+liar_new <- dat_claims %>%
+  filter(dataset == "liar_new") %>% 
+  filter(veracity != 9)
+
+frequency_liar_new_unique <- frequency_liar_new %>%
+  distinct(word, .keep_all = TRUE)
+
+top_keywords <- frequency_liar_new_unique$word
+
+corpus <- Corpus(VectorSource(liar_new$claim))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
+                                                 binary = TRUE))
+dtm_matrix <- as.matrix(dtm)
+
+keyword_df <- as.data.frame(dtm_matrix)
+
+X <- keyword_df
+Y <- as.factor(liar_new$veracity)
+
+valid_indices <- which(!is.na(Y))
+X <- X[valid_indices, ]
+Y <- Y[valid_indices]
+
+set.seed(42)
+train_index <- createDataPartition(Y, p = 0.75, list = FALSE)
+X_train <- X[train_index, ]
+Y_train <- Y[train_index]
+X_test <- X[-train_index, ]
+Y_test <- Y[-train_index]
+
+rf_model <- randomForest(X_train, Y_train, ntree = 100, maxnodes = 20)
+
+predictions <- predict(rf_model, X_test)
+
+confusion_matrix <- table(predictions, Y_test)
+print("Confusion Matrix (Random Forest):")
+print(confusion_matrix)
+
+f1_scores <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix[class, class]
+  FP <- sum(confusion_matrix[, class]) - TP
+  FN <- sum(confusion_matrix[class, ]) - TP
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  2 * (precision * recall) / (precision + recall)
+})
+
+macro_f1 <- mean(f1_scores)
+print(paste("Macro F1 Score (Random Forest):", macro_f1))
+
+
+# ----------------------
+# Calculate the baseline F1-score with random predictions
+# ----------------------
+
+class_distribution <- prop.table(table(Y))
+random_predictions <- sample(levels(Y), size = length(Y_test), 
+                             replace = TRUE, prob = class_distribution)
+
+confusion_matrix_random <- table(random_predictions, Y_test)
+
+# F1 macro score
+f1_scores_random <- sapply(levels(Y_test), function(class) {
+  TP <- confusion_matrix_random[class, class]
+  FP <- sum(confusion_matrix_random[, class]) - TP
+  FN <- sum(confusion_matrix_random[class, ]) - TP
+  
+  if (TP == 0) {
+    return(0) 
+  }
+  
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  
+  if (is.nan(precision) || is.nan(recall)) {
+    return(0) 
+  }
+  
+  return(2 * (precision * recall) / (precision + recall))
+})
+
+macro_f1_random <- mean(f1_scores_random, na.rm = TRUE)
+print(paste("Macro F1 Score (random prediction):", macro_f1_random))
+```
+
 ## MM-COVID
 
 ## T-F
@@ -2428,7 +2412,8 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 ## Has 2 labels
 
 mm_covid <- dat_claims %>%
-  filter(dataset == "mm-covid")
+  filter(dataset == "mm-covid") %>% 
+  filter(!veracity %in% c(3, 9))
 
 frequency_mm_covid_unique <- `frequency_mm-covid` %>%
   distinct(word, .keep_all = TRUE)
@@ -2520,7 +2505,7 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 ```
 
-## NLP4OF-2021
+## NLP4IF-2021
 
 ### T-F
 
@@ -2528,7 +2513,8 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 ## Dataset
 nlp4if <- dat_claims %>%
-  filter(dataset == "nlp4if") # Two labels
+  filter(dataset == "nlp4if") %>%  # Two labels 
+  filter(!veracity %in% c(3, 9))
 
 ## Top 40 keywords
 frequency_nlp4if_unique <- frequency_nlp4if %>%
@@ -2640,7 +2626,7 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 pubhealthtab <- dat_claims %>% 
   filter(dataset == "pubhealthtab") %>% 
   filter(!is.na(claim) & claim != "") %>% 
-  filter(veracity != 3)
+  filter(!veracity %in% c(3, 9))
 
 frequency_pubhealthtab_unique <- frequency_pubhealthtab %>%
   distinct(word, .keep_all = TRUE)
@@ -2734,106 +2720,7 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 ```
 
-### T-F-O
-
-```{r, warning=FALSE}
-
-# 3 labels ----------------------------------------------------------------
-
-pubhealthtab <- dat_claims %>% 
-  filter(dataset == "pubhealthtab") %>% 
-  filter(!is.na(claim) & claim != "")
-
-frequency_pubhealthtab_unique <- frequency_pubhealthtab %>%
-  distinct(word, .keep_all = TRUE)
-
-top_keywords <- frequency_pubhealthtab_unique$word
-
-corpus <- Corpus(VectorSource(pubhealthtab$claim))
-corpus <- tm_map(corpus, content_transformer(tolower))
-corpus <- tm_map(corpus, removePunctuation)
-corpus <- tm_map(corpus, removeNumbers)
-corpus <- tm_map(corpus, removeWords, stopwords("en"))
-corpus <- tm_map(corpus, stripWhitespace)
-
-dtm <- DocumentTermMatrix(corpus, control = list(dictionary = top_keywords, 
-                                                 binary = TRUE))
-dtm_matrix <- as.matrix(dtm)
-
-keyword_df <- as.data.frame(dtm_matrix)
-
-X <- keyword_df
-Y <- as.factor(pubhealthtab$veracity)
-
-valid_indices <- which(!is.na(Y))
-X <- X[valid_indices, ]
-Y <- Y[valid_indices]
-
-set.seed(42)
-train_index <- createDataPartition(Y, p = 0.75, 
-                                   list = FALSE)
-X_train <- X[train_index, ]
-Y_train <- Y[train_index]
-X_test <- X[-train_index, ]
-Y_test <- Y[-train_index]
-
-rf_model <- randomForest(X_train, 
-                         Y_train, 
-                         ntree = 100, 
-                         maxnodes = 20)
-
-predictions <- predict(rf_model, X_test)
-
-confusion_matrix <- table(predictions, 
-                          Y_test)
-print(confusion_matrix)
-
-f1_scores <- sapply(levels(Y_test), function(class) {
-  TP <- confusion_matrix[class, class]
-  FP <- sum(confusion_matrix[, class]) - TP
-  FN <- sum(confusion_matrix[class, ]) - TP
-  
-  precision <- TP / (TP + FP)
-  recall <- TP / (TP + FN)
-  
-  if (is.nan(precision) || is.nan(recall)) {
-    return(0)}
-  
-  2 * (precision * recall) / (precision + recall)
-})
-
-macro_f1 <- mean(f1_scores)
-
-print(paste("Macro F1 Score (random forest):", macro_f1))
-
-# ----------------------
-# Calculate the baseline F1-score with random predictions
-# ----------------------
-
-class_distribution <- prop.table(table(Y))
-random_predictions <- sample(levels(Y), size = length(Y_test), replace = TRUE, prob = class_distribution)
-
-confusion_matrix_random <- table(random_predictions, Y_test)
-
-f1_scores_random <- sapply(levels(Y_test), function(class) {
-  TP <- confusion_matrix_random[class, class]
-  FP <- sum(confusion_matrix_random[, class]) - TP
-  FN <- sum(confusion_matrix_random[class, ]) - TP
-  
-  precision <- TP / (TP + FP)
-  recall <- TP / (TP + FN)
-  
-  if (is.nan(precision) || is.nan(recall)) {
-    return(0) 
-  }
-  
-  2 * (precision * recall) / (precision + recall)
-})
-
-macro_f1_random <- mean(f1_scores_random)
-print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
-
-```
+### 
 
 ## Rumors
 
@@ -2845,7 +2732,7 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 rumors_filtered <- dat_claims %>%
   filter(dataset == "rumors") %>%
-  filter(veracity != 3)
+  filter(!veracity %in% c(3, 9))
 
 frequency_rumors_unique <- frequency_rumors %>%
   distinct(word, .keep_all = TRUE)
@@ -2944,7 +2831,8 @@ print(paste("Macro F1 Score (Random Predictions - Rumors):", macro_f1_random_rum
 # 3 labels ----------------------------------------------------------------
 
 rumors_filtered_no_filter <- dat_claims %>%
-  filter(dataset == "rumors") 
+  filter(dataset == "rumors") %>% 
+  filter(veracity != 9)
 
 frequency_rumors_unique <- frequency_rumors %>%
   distinct(word, .keep_all = TRUE)
@@ -3017,8 +2905,9 @@ random_predictions_rumors_no_filter <- sample(levels(Y_rumors_no_filter),
                                               replace = TRUE, 
                                               prob = class_distribution_rumors_no_filter)
 
-confusion_matrix_random_rumors_no_filter <- table(random_predictions_rumors_no_filter, 
-                                                  Y_test_rumors_no_filter)
+confusion_matrix_random_rumors_no_filter <- table(factor(random_predictions_rumors_no_filter, levels = levels(Y_test_rumors_no_filter)), 
+                                                  factor(Y_test_rumors_no_filter, levels = levels(Y_test_rumors_no_filter)))
+
 
 f1_scores_random_rumors_no_filter <- sapply(levels(Y_test_rumors_no_filter), function(class) {
   TP <- confusion_matrix_random_rumors_no_filter[class, class]
@@ -3051,7 +2940,7 @@ print(paste("Macro F1 Score (Random Predictions):",
 
 snopes_filtered <- dat_claims %>%
   filter(dataset == "snopes") %>%
-  filter(veracity != 3)
+  filter(!veracity %in% c(3, 9))
 
 frequency_snopes_unique <- frequency_snopes %>%
   distinct(word, .keep_all = TRUE)
@@ -3148,7 +3037,8 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 # 3 labels ----------------------------------------------------------------
 
 snopes <- dat_claims %>%
-  filter(dataset == "snopes")
+  filter(dataset == "snopes") %>% 
+  filter(veracity != 9)
 
 frequency_snopes_unique <- frequency_snopes %>%
   distinct(word, .keep_all = TRUE)
@@ -3242,7 +3132,8 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 ```{r, warning=FALSE}
 
 truthseeker2023 <- dat_claims %>%
-  filter(dataset == "truthseeker2023") # Has only two labels
+  filter(dataset == "truthseeker2023") %>% # Has only two labels
+  filter(!veracity %in% c(3, 9))
 
 frequency_truthseeker2023_unique <- frequency_truthseeker2023 %>%
   distinct(word, .keep_all = TRUE)
@@ -3347,7 +3238,7 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 twitter15 <- dat_claims %>% 
   filter(dataset == "twitter15") %>% 
   filter(!is.na(claim) & claim != "") %>% 
-  filter(veracity != 3)
+  filter(!veracity %in% c(3, 9))
 
 # Top 40 keywords
 frequency_twitter15_unique <- frequency_twitter15 %>%
@@ -3450,7 +3341,8 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 twitter15 <- dat_claims %>% 
   filter(dataset == "twitter15") %>% 
-  filter(!is.na(claim) & claim != "")
+  filter(!is.na(claim) & claim != "") %>% 
+  filter(veracity != 9)
 
 frequency_twitter15_unique <- frequency_twitter15 %>%
   distinct(word, .keep_all = TRUE)
@@ -3561,7 +3453,7 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 twitter16 <- dat_claims %>% 
   filter(dataset == "twitter16") %>% 
   filter(!is.na(claim) & claim != "") %>% 
-  filter(veracity != 3)
+  filter(!veracity %in% c(3, 9))
 
 frequency_twitter16_unique <- frequency_twitter16 %>%
   distinct(word, .keep_all = TRUE)
@@ -3658,7 +3550,8 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 twitter16 <- dat_claims %>% 
   filter(dataset == "twitter16") %>% 
-  filter(!is.na(claim) & claim != "")
+  filter(!is.na(claim) & claim != "") %>% 
+  filter(veracity != 9)
 
 frequency_twitter16_unique <- frequency_twitter16 %>%
   distinct(word, .keep_all = TRUE)
@@ -3753,7 +3646,8 @@ print(paste("Macro F1 Score (Random Predictions - Unfiltered):", macro_f1_random
 ```{r, warning=FALSE}
 
 verite <- dat_claims %>%
-  filter(dataset == "verite") # has only 2 labels
+  filter(dataset == "verite") %>% # has only 2 labels
+  filter(!veracity %in% c(3, 9))
 
 frequency_verite_unique <- frequency_verite %>%
   distinct(word, .keep_all = TRUE)
@@ -3854,7 +3748,7 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
 x_fact_filtered <- dat_claims %>%
   filter(dataset == "x_fact") %>%
-  filter(veracity != 3)
+  filter(!veracity %in% c(3, 9))
 
 frequency_x_fact_unique <- frequency_x_fact %>%
   distinct(word, .keep_all = TRUE)
@@ -3950,7 +3844,8 @@ print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 # 3 labels ----------------------------------------------------------------
 
 x_fact <- dat_claims %>%
-  filter(dataset == "x_fact")
+  filter(dataset == "x_fact") %>% 
+  filter(veracity != 9)
 
 frequency_x_fact_unique <- frequency_x_fact %>%
   distinct(word, .keep_all = TRUE)
@@ -4038,4 +3933,336 @@ f1_scores_random <- sapply(levels(Y_test), function(class) {
 macro_f1_random <- mean(f1_scores_random)
 print(paste("Macro F1 Score (Random Predictions):", macro_f1_random))
 
+```
+
+# Graph
+
+```{r}
+# GRAPH - KEYWORDS ANALYSIS -----------------------------------------------
+
+## IFND
+
+IFND <- dat_claims %>%
+  filter(dataset == "IFND") %>%
+  mutate(claim_text = str_to_lower(claim)) %>%
+  unnest_tokens(word, claim) %>%
+  anti_join(stop_words)
+
+word_freq <- IFND %>%
+  count(veracity, word) %>%
+  group_by(word) %>%
+  mutate(freq = n / sum(n))
+
+word_freq <- word_freq %>%
+  filter(n >= 10)
+
+word_freq_clean <- word_freq %>%
+  filter(!is.na(word), word != "url")
+
+# Top 40 words
+top_40_words <- word_freq_clean %>%
+  group_by(word) %>%
+  summarize(total_n = sum(n)) %>% 
+  arrange(desc(total_n)) %>%
+  slice_head(n = 40)
+
+word_freq_top_40 <- word_freq_clean %>%
+  filter(word %in% top_40_words$word)
+
+# Mean frequency
+mean_freq <- word_freq_top_40 %>%
+  pull(freq) %>% 
+  mean(na.rm = TRUE)
+
+mean_freq
+
+### Graph
+
+ifnd_graph <- ggplot(word_freq_top_40, aes(x = freq, 
+                            y = veracity, 
+                            label = word)) +
+  geom_point(size = 1) +
+  geom_text_repel(color = "black",
+                  size = 3, 
+                  nudge_x = 0.03,
+                  nudge_y = 0.1,
+                  box.padding = 0.4,
+                  max.overlaps = 50,
+                  segment.size = 0.3,
+                  segment.color = "grey") +
+  labs(x = "Word Frequency (%)",
+       y = "Veracity") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14),
+        plot.subtitle = element_text(hjust = 0.5, size = 12), 
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        axis.text = element_text(size = 6),
+        axis.title = element_text(size = 10),
+        axis.text.x = element_text(size = 8),
+        axis.text.y = element_text(size = 8),
+        axis.line = element_line(color = "gray47"), 
+        axis.ticks = element_line(color = "gray47")) +
+  scale_x_continuous(limits = c(0.59, 1.1), 
+                     breaks = seq(0.6, 1, by = 0.1),  
+                     expand = expansion(add = c(0, 0.1))) +  
+   scale_y_reverse(limits = c(2.05, 0.5),
+                   breaks = c(1, 2),
+                   labels = c("True", "False"))
+
+ifnd_graph
+
+### Save
+ggsave(ifnd_graph,
+       filename = "ifnd_graph.png",
+       dpi = 320,
+       bg = "white",
+       units = "cm",
+       height = 12,
+       width = 18)
+
+
+# mm-covid ----------------------------------------------------------------
+
+mmcovid <- dat_claims %>%
+  filter(dataset == "mm-covid") %>%
+  mutate(claim_text = str_to_lower(claim)) %>%
+  unnest_tokens(word, claim) %>%
+  anti_join(stop_words)
+
+word_freq <- mmcovid  %>%
+  count(veracity, word) %>%
+  group_by(word) %>%
+  mutate(freq = n / sum(n))
+
+word_freq <- word_freq %>%
+  filter(n >= 10)
+
+word_freq_clean <- word_freq %>%
+  filter(!is.na(word), word != "di", word != "de", word != "da")
+
+# Top 40 words
+top_40_words <- word_freq_clean %>%
+  group_by(word) %>%
+  summarize(total_n = sum(n)) %>% 
+  arrange(desc(total_n)) %>%
+  slice_head(n = 40)
+
+word_freq_top_40 <- word_freq_clean %>%
+  filter(word %in% top_40_words$word)
+
+# Mean frequency
+mean_freq <- word_freq_top_40 %>%
+  pull(freq) %>% 
+  mean(na.rm = TRUE)
+
+mean_freq
+
+### Graph
+
+mmcovid_graph <- ggplot(word_freq_top_40, aes(x = freq, 
+                             y = veracity, 
+                             label = word)) +
+  geom_point(size = 1) +
+  geom_text_repel(color = "black",
+                  size = 3, 
+                  nudge_x = 0.03,
+                  nudge_y = 0.1,
+                  box.padding = 0.4,
+                  max.overlaps = 50,
+                  segment.size = 0.3,
+                  segment.color = "grey") +
+  labs(x = "Word Frequency (%)",
+       y = "Veracity") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14),
+        plot.subtitle = element_text(hjust = 0.5, size = 12), 
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        axis.text = element_text(size = 6),
+        axis.title = element_text(size = 10),
+        axis.text.x = element_text(size = 8),
+        axis.text.y = element_text(size = 8),
+        axis.line = element_line(color = "gray47"), 
+        axis.ticks = element_line(color = "gray47")) +
+  scale_x_continuous(limits = c(0.59, 1.1), 
+                     breaks = seq(0.6, 1, by = 0.1),  
+                     expand = expansion(add = c(0, 0.1))) +  
+  scale_y_reverse(limits = c(2.05, 0.5),
+                  breaks = c(1, 2),
+                  labels = c("True", "False"))
+mmcovid_graph
+
+ggsave(mmcovid_graph,
+       filename = "mmcovid_graph.png",
+       dpi = 320,
+       bg = "white",
+       units = "cm",
+       height = 12,
+       width = 18)
+
+
+## TWITTER16
+
+# Cleaning
+twitter16_data <- dat_claims %>%
+  filter(dataset == "twitter16") %>%
+  mutate(claim_text = str_to_lower(claim)) %>%
+  unnest_tokens(word, claim) %>%
+  anti_join(stop_words)
+
+word_freq <- twitter16_data %>%
+  count(veracity, word) %>%
+  group_by(word) %>%
+  mutate(freq = n / sum(n))
+
+word_freq <- word_freq %>%
+  filter(n >= 10)
+
+word_freq_clean <- word_freq %>%
+  filter(!is.na(word), word != "url")
+
+# 40 top frequent words
+top_40_words <- word_freq_clean %>%
+  group_by(word) %>%
+  summarize(total_n = sum(n)) %>% 
+  arrange(desc(total_n)) %>%
+  slice_head(n = 40)
+
+word_freq_top_40 <- word_freq_clean %>%
+  filter(word %in% top_40_words$word)
+
+# Mean frequency
+mean_freq <- word_freq_top_40 %>%
+  pull(freq) %>% 
+  mean(na.rm = TRUE)
+
+mean_freq
+
+# Graph creation
+twitter16_graph <- ggplot(word_freq_top_40, aes(x = freq, 
+                                               y = veracity, 
+                                               label = word)) +
+  geom_point(size = 1) +
+  geom_text_repel(color = "black",
+                  size = 3, 
+                  nudge_x = 0.03,
+                  nudge_y = 0.1,
+                  box.padding = 0.4,
+                  max.overlaps = 50,
+                  segment.size = 0.3,
+                  segment.color = "grey") +
+  labs(
+       x = "Word Frequency (%)",
+       y = "Veracity") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14),
+        plot.subtitle = element_text(hjust = 0.5, size = 12), 
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        axis.text = element_text(size = 6),
+        axis.title = element_text(size = 10),
+        axis.text.x = element_text(size = 8),
+        axis.text.y = element_text(size = 8),
+        axis.line = element_line(color = "gray47"), 
+        axis.ticks = element_line(color = "gray47")) +
+  scale_x_continuous(limits = c(0.59, 1.1), 
+                     breaks = seq(0.6, 1, by = 0.1),  
+                     expand = expansion(add = c(0, 0.1))) +  
+  scale_y_reverse(limits = c(2.05, 0.5),
+                  breaks = c(1, 2),
+                  labels = c("True", "False"))
+
+twitter16_graph
+
+# Save
+ggsave(twitter16_graph,
+       filename = "twitter16_graph.png",
+       dpi = 320,
+       bg = "white",
+       units = "cm",
+       height = 12,
+       width = 18)
+
+
+## TRUTHSEEKER2023
+
+# Cleaning
+truthseeker2023_data <- dat_claims %>%
+  filter(dataset == "truthseeker2023") %>%
+  mutate(claim_text = str_to_lower(claim)) %>%
+  unnest_tokens(word, claim) %>%
+  anti_join(stop_words)
+
+word_freq <- truthseeker2023_data %>%
+  count(veracity, word) %>%
+  group_by(word) %>%
+  mutate(freq = n / sum(n))
+
+word_freq <- word_freq %>%
+  filter(n >= 2000)
+
+word_freq_clean <- word_freq %>%
+  filter(!is.na(word))
+
+# Top 40 words
+
+top_40_words <- word_freq_clean %>%
+  group_by(word) %>%
+  summarize(total_n = sum(n)) %>% 
+  arrange(desc(total_n)) %>%
+  slice_head(n = 40)
+
+word_freq_top_40 <- word_freq_clean %>%
+  filter(word %in% top_40_words$word)
+
+# Mean frequency
+mean_freq <- word_freq_top_40 %>%
+  pull(freq) %>% 
+  mean(na.rm = TRUE)
+
+mean_freq
+
+# Graph
+truthseeker2023_graph <- ggplot(word_freq_top_40, aes(x = freq, 
+                                                     y = veracity, 
+                                                     label = word)) +
+  geom_point(size = 1) +
+  geom_text_repel(color = "black",
+                  size = 3, 
+                  nudge_x = 0.04,
+                  nudge_y = 0.1,
+                  box.padding = 0.4,
+                  max.overlaps = 50,
+                  segment.size = 0.3,
+                  segment.color = "grey") +
+  labs(x = "Word Frequency (%)",
+       y = "Veracity") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14),
+        plot.subtitle = element_text(hjust = 0.5, size = 12), 
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        axis.text = element_text(size = 6),
+        axis.title = element_text(size = 10),
+        axis.text.x = element_text(size = 8),
+        axis.text.y = element_text(size = 8),
+        axis.line = element_line(color = "gray47"), 
+        axis.ticks = element_line(color = "gray47")) +
+  scale_x_continuous(limits = c(0.59, 1.1), 
+                     breaks = seq(0.6, 1, by = 0.1),  
+                     expand = expansion(add = c(0, 0.1))) +
+  scale_y_reverse(limits = c(3.05, 0.5),
+                  breaks = c(1, 2),
+                  labels = c("True", "False"))
+
+truthseeker2023_graph
+
+ggsave(truthseeker2023_graph,
+       filename = "truthseeker2023_graph.png",
+       dpi = 320,
+       bg = "white",
+       units = "cm",
+       height = 12,
+       width = 18)
 ```
