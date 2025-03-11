@@ -26,7 +26,7 @@ PROJECTIONS = {
 
 async def evaluate_feasibility(
     statements: list[str], llm_evaluator: "AsyncLLMEvaluator"
-) -> dict[str | None, float]:
+) -> dict[str | None, int]:
     """Evaluate feasibility of the given data.
 
     Params:
@@ -35,11 +35,10 @@ async def evaluate_feasibility(
 
     Returns:
         metrics:
-        - "feasible, no search required": float between 0.0 and 1.0
-        - "feasible, requires search": float between 0.0 and 1.0
-        - "not feasible even with search": float between 0.0 and 1.0
-        - None: float between 0.0 and 1.0
-        (these categories are mutually-exclusive, and add up to 1.0)
+        - "feasible, no search required": int
+        - "feasible, requires search": int
+        - "not feasible even with search": int
+        - None: int
     """
 
     per_template_predictions: list[list[str | None]] = []
