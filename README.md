@@ -41,7 +41,14 @@ len(dataset): 392
 100%|██████████████████████████████████████| 72/72 [00:08<00:00,  8.49it/s]
 100%|██████████████████████████████████████| 72/72 [00:12<00:00,  5.72it/s]
 Evaluating Feasibility: 100%|████████████████| 2/2 [00:21<00:00, 10.54s/it]
-Counter({'feasible, requires search': 50, 'not feasible even with search': 18, 'feasible, no search required': 4})
+```
+
+```python
+{
+  "feasible, requires search": 50,
+  "not feasible even with search": 18,
+  "feasible, no search required": 4
+}
 ```
 
 ## Run Evaluation on a dataset where tweet_id is available
