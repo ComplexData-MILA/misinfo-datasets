@@ -70,39 +70,45 @@ Revision: ce06269
 Name of data subset: twitter15
 Name of data split: train
 len(dataset): 1043
-1043
-1043
-1043
+len(dataset) filtered by veracity is not unknown: 793
+len(dataset) filtered by tweet_id is not unknown: 793
 0
               precision    recall  f1-score   support
 
-        True      1.000     1.000     1.000       261
+           0      0.838     0.886     0.861        70
+           1      0.936     0.907     0.921       129
 
-    accuracy                          1.000       261
-   macro avg      1.000     1.000     1.000       261
-weighted avg      1.000     1.000     1.000       261
+    accuracy                          0.899       199
+   macro avg      0.887     0.896     0.891       199
+weighted avg      0.901     0.899     0.900       199
 ```
 
 ```python
 {
-  "True": {
-    "precision": 1.0,
-    "recall": 1.0,
-    "f1-score": 1.0,
-    "support": 261.0
+  "0": {
+    "precision": 0.8378378378378378,
+    "recall": 0.8857142857142857,
+    "f1-score": 0.8611111111111112,
+    "support": 70.0
   },
-  "accuracy": 1.0,
+  "1": {
+    "precision": 0.936,
+    "recall": 0.9069767441860465,
+    "f1-score": 0.9212598425196851,
+    "support": 129.0
+  },
+  "accuracy": 0.8994974874371859,
   "macro avg": {
-    "precision": 1.0,
-    "recall": 1.0,
-    "f1-score": 1.0,
-    "support": 261.0
+    "precision": 0.8869189189189189,
+    "recall": 0.896345514950166,
+    "f1-score": 0.8911854768153982,
+    "support": 199.0
   },
   "weighted avg": {
-    "precision": 1.0,
-    "recall": 1.0,
-    "f1-score": 1.0,
-    "support": 261.0
+    "precision": 0.9014705962243652,
+    "recall": 0.8994974874371859,
+    "f1-score": 0.9001019973005887,
+    "support": 199.0
   }
 }
 ```

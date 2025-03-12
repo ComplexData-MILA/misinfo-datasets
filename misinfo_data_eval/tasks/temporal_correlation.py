@@ -6,6 +6,9 @@ from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 
 
+LABEL_MAP = {"true": 1, "false": 0, "unknown": None}
+
+
 def evaluate_temporal_correlations(dataset: list[dict[str, Any]]) -> dict[str, float]:
     """Evaluate temporal correlation on the given data.
 
@@ -13,13 +16,13 @@ def evaluate_temporal_correlations(dataset: list[dict[str, Any]]) -> dict[str, f
     """
     temp_df = pd.DataFrame(dataset)
 
-    print(len(temp_df))
     temp_df = temp_df[temp_df.veracity != 3]
+    temp_df["veracity"] = temp_df["veracity"].apply(LABEL_MAP.get)
     temp_df = temp_df[temp_df.veracity.notna()]
-    temp_df["veracity"] = temp_df["veracity"].astype(bool)
-    print(len(temp_df))
+    temp_df["veracity"] = temp_df["veracity"].astype(int)
+    print("len(dataset) filtered by veracity is not unknown:", len(temp_df))
     temp_df = temp_df[temp_df.tweet_id.notna()]
-    print(len(temp_df))
+    print("len(dataset) filtered by tweet_id is not unknown:", len(temp_df))
 
     def convert_to_int(x):
         x = str(x)[:4]
