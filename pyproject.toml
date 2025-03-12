@@ -9,4 +9,7 @@ dependencies = [
     "datasets",
     "openai",
     "tqdm",
+    "scikit-learn",
+    "isort",
+    "black",
 ]
