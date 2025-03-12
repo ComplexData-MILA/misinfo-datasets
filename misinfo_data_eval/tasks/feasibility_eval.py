@@ -1,7 +1,7 @@
 """Evaluate feasibility using LLM."""
 
 from collections import Counter
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from tqdm.auto import tqdm
 

@@ -2,18 +2,17 @@
 Utils for efficient async OpenAI text generation.
 """
 
-from contextlib import contextmanager
-from typing import Any, Callable, TypeVar
 import asyncio
-import os
-from pathlib import Path
 import gzip
+import os
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Callable, TypeVar
 
 import backoff
 import openai
 import pydantic
 from tqdm.asyncio import tqdm
-
 
 client = openai.AsyncOpenAI()
 

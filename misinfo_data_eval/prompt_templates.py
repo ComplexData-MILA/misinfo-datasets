@@ -41,4 +41,3 @@ Rate on the following scale how possible it seems to evaluate the veracity of th
 
 Give a brief explanation, then write a vertical bar "|", followed by your rating as a number alone.
 """
-
