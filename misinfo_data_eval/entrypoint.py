@@ -7,6 +7,7 @@ from .data_loading_utils import DATA_INSTRUCTIONS, load_data
 from .generation_utils import AsyncLLMEvaluator, Cache
 from .tasks.feasibility_eval import evaluate_feasibility
 from .tasks.temporal_correlation import evaluate_temporal_correlations
+from .tasks.keyword_analysis import keyword_analysis
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--evaluator_model_name")
@@ -16,6 +17,7 @@ parser.add_argument("--evaluate_feasibility", action="store_true", default=False
 parser.add_argument(
     "--evaluate_temporal_correlation", action="store_true", default=False
 )
+parser.add_argument("--keyword_analysis", action="store_true", default=False)
 parser.add_argument("--assert_cached", action="store_true", default=False)
 parser.add_argument("--max_generation_tokens", type=int, default=4096)
 parser.add_argument("--limit", type=int, default=-1)
@@ -66,6 +68,15 @@ async def main():
 
         temporal_correlation_metrics = evaluate_temporal_correlations(dataset)
         print(json.dumps(temporal_correlation_metrics, indent=2))
+
+    if args.keyword_analysis: 
+        try: 
+            keyword_metrics = keyword_analysis(
+                dataset=dataset
+            )
+            print(json.dumps(keyword_metrics, indent=2))
+        finally: 
+            cache.write()
 
 
 if __name__ == "__main__":
