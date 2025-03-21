@@ -69,6 +69,7 @@ async def generate(
     data: Data,
     model_name: str,
     async_semaphore: asyncio.Semaphore,
+    async_client: openai.AsyncOpenAI,
     cache: Cache,
     assert_cached: bool = False,
     max_completion_tokens: int = 4096,
@@ -80,6 +81,7 @@ async def generate(
         data: to be returned verbatim
         model_name: str
         async_semaphore: to limit number of concurrent requests.
+        async_client: async OpenAI client.
         cache: Cache
     """
     async with async_semaphore:
@@ -89,7 +91,7 @@ async def generate(
 
             assert not assert_cached, "Cache miss. Maybe run without --assert_cached?"
 
-            response = await client.chat.completions.create(
+            response = await async_client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "user", "content": prompt}],
                 max_completion_tokens=max_completion_tokens,
@@ -116,6 +118,7 @@ class AsyncLLMEvaluator:
         self.async_semaphore = async_semaphore
         self.assert_cached = assert_cached
         self.max_completion_tokens = max_completion_tokens
+        self.async_client = openai.AsyncOpenAI()
 
     async def evalute_on_template(
         self,
@@ -140,6 +143,7 @@ class AsyncLLMEvaluator:
                 data={**row, "_index": index},
                 model_name=self.model_name,
                 async_semaphore=self.async_semaphore,
+                async_client=self.async_client,
                 cache=self.cache,
                 assert_cached=self.assert_cached,
                 max_completion_tokens=self.max_completion_tokens,

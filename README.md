@@ -112,3 +112,50 @@ weighted avg      0.901     0.899     0.900       199
   }
 }
 ```
+
+
+## Run Keyword Correlation Analysis
+
+```bash
+uv run -m misinfo_data_eval.entrypoint \
+--source_dataset_path hf://ComplexDataLab/Misinfo_Datasets@ce06269:liar_new:test \
+--keyword_analysis \
+--limit 72
+```
+
+Example output:
+
+```
+[nltk_data] Downloading package punkt to /home/ubuntu/nltk_data...
+[nltk_data]   Package punkt is already up-to-date!
+[nltk_data] Downloading package punkt_tab to /home/ubuntu/nltk_data...
+[nltk_data]   Package punkt_tab is already up-to-date!
+[nltk_data] Downloading package stopwords to /home/ubuntu/nltk_data...
+[nltk_data]   Package stopwords is already up-to-date!
+len(dataset) filtered by veracity is not unknown: 392
+{
+  "veracity_counts": {
+    "0": 327,
+    "1": 65
+  },
+  "veracity_proportions": {
+    "0": 83.41836734693877,
+    "1": 16.581632653061224
+  },
+  "top_keywords": {
+    "\u201c": 268, "\u201d": 265, "\u2019": 91, "shows": 46, "biden": 42, "covid19": 26, "video": 26, "people": 23, "joe": 22, "president": 22, "says": 21, "new": 20, "photo": 18, "us": 18, "trump": 17, "ukraine": 16, "million": 13, "vaccines": 13, "\u2018": 13, "2020": 13, "covid": 12, "one": 12, "said": 11, "children": 11, "bill": 11, "election": 11, "year": 10, "pelosi": 9, "america": 9, "used": 9, "americans": 9, "would": 9, "voted": 9, "state": 9, "prices": 9, "abortion": 9, "tax": 9, "vaccine": 8, "agents": 8, "states": 8
+  },
+  "confusion_matrix": [
+    [
+      77,
+      5
+    ],
+    [
+      14,
+      2
+    ]
+  ],
+  "macro_f1_random_forest": 0.5320432269414426,
+  "macro_f1_random_baseline": 0.4716490053913367
+}
+```

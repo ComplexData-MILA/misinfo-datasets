@@ -4,10 +4,6 @@ import json
 from os import makedirs
 
 from .data_loading_utils import DATA_INSTRUCTIONS, load_data
-from .generation_utils import AsyncLLMEvaluator, Cache
-from .tasks.feasibility_eval import evaluate_feasibility
-from .tasks.temporal_correlation import evaluate_temporal_correlations
-from .tasks.keyword_analysis import keyword_analysis
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--evaluator_model_name")
@@ -25,26 +21,28 @@ parser.add_argument("--limit", type=int, default=-1)
 
 async def main():
     args = parser.parse_args()
-
-    makedirs("data/cache", exist_ok=True)
-    async_semaphore = asyncio.Semaphore(args.max_concurrency)
-    cache = Cache(f"data/cache/{args.evaluator_model_name}.jsonl.gz")
-    llm_evaluator = AsyncLLMEvaluator(
-        model_name=args.evaluator_model_name,
-        cache=cache,
-        async_semaphore=async_semaphore,
-        assert_cached=args.assert_cached,
-        max_completion_tokens=args.max_generation_tokens,
-    )
-
     dataset = load_data(args.source_dataset_path)
     print("len(dataset):", len(dataset))
 
     # Feasibility Evaluation
     if args.evaluate_feasibility:
+        from .generation_utils import AsyncLLMEvaluator, Cache
+        from .tasks.feasibility_eval import evaluate_feasibility
+
         if args.evaluator_model_name is None:
             msg = "Must specify an LLM evaluator for evaluate_feasibility."
             raise ValueError(msg)
+
+        makedirs("data/cache", exist_ok=True)
+        async_semaphore = asyncio.Semaphore(args.max_concurrency)
+        cache = Cache(f"data/cache/{args.evaluator_model_name}.jsonl.gz")
+        llm_evaluator = AsyncLLMEvaluator(
+            model_name=args.evaluator_model_name,
+            cache=cache,
+            async_semaphore=async_semaphore,
+            assert_cached=args.assert_cached,
+            max_completion_tokens=args.max_generation_tokens,
+        )
 
         try:
             feasibility_metrics = await evaluate_feasibility(
@@ -59,6 +57,8 @@ async def main():
 
     # Temporal Correlation Evaluation, if "tweet_id" data is available
     if args.evaluate_temporal_correlation:
+        from .tasks.temporal_correlation import evaluate_temporal_correlations
+
         if not (len(dataset) > 0) and ("tweet_id" in dataset[0].keys()):
             msg = (
                 "tweet_id is not present in dataset. "
@@ -69,14 +69,11 @@ async def main():
         temporal_correlation_metrics = evaluate_temporal_correlations(dataset)
         print(json.dumps(temporal_correlation_metrics, indent=2))
 
-    if args.keyword_analysis: 
-        try: 
-            keyword_metrics = keyword_analysis(
-                dataset=dataset
-            )
-            print(json.dumps(keyword_metrics, indent=2))
-        finally: 
-            cache.write()
+    if args.keyword_analysis:
+        from .tasks.keyword_analysis import keyword_analysis
+
+        keyword_metrics = keyword_analysis(dataset=dataset)
+        print(json.dumps(keyword_metrics, indent=2))
 
 
 if __name__ == "__main__":
