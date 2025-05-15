@@ -13,4 +13,7 @@ dependencies = [
     "isort",
     "black",
     "nltk",
+    "openai-agents>=0.0.14",
+    "opik>=1.7.20",
+    "elasticsearch[async]==8.17.2",
 ]

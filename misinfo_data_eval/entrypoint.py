@@ -7,9 +7,11 @@ from .data_loading_utils import DATA_INSTRUCTIONS, load_data
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--evaluator_model_name")
+parser.add_argument("--web_search_model_name")
 parser.add_argument("--source_dataset_path", required=True, help=DATA_INSTRUCTIONS)
 parser.add_argument("--max_concurrency", type=int, default=1)
 parser.add_argument("--evaluate_feasibility", action="store_true", default=False)
+parser.add_argument("--evaluate_factuality", action="store_true", default=False)
 parser.add_argument(
     "--evaluate_temporal_correlation", action="store_true", default=False
 )
@@ -21,7 +23,7 @@ parser.add_argument("--limit", type=int, default=-1)
 
 async def main():
     args = parser.parse_args()
-    dataset = load_data(args.source_dataset_path)
+    dataset = list(load_data(args.source_dataset_path))
     print("len(dataset):", len(dataset))
 
     # Feasibility Evaluation
@@ -54,6 +56,53 @@ async def main():
         finally:
             # Cache previous generations if interrupted.
             cache.write()
+
+    if args.evaluate_factuality:
+        from .generation_utils import AsyncElasticsearchCache
+        from .tasks.web_search import batch_evaluate
+
+        async_semaphore = asyncio.Semaphore(args.max_concurrency)
+        es_cache = await AsyncElasticsearchCache.maybe_from_env_var(
+            "cache_misinfo_eval_web_retrieval"
+        )
+        assert es_cache is not None
+
+        data_rows = [
+            _row
+            for _row in dataset[: args.limit]
+            if _row["veracity"] in ("true", "false")
+        ]
+        eval_output = await batch_evaluate(
+            data_rows,
+            cache=es_cache,
+            async_semaphore=async_semaphore,
+            total=len(data_rows),
+        )
+        await es_cache.close()
+
+        num_total_valid = 0
+        num_total_correct = 0
+
+        for output in eval_output:
+            if output.is_correct is not None:
+                num_total_valid += 1
+                num_total_correct += output.is_correct
+
+        print(
+            json.dumps(
+                {
+                    "num_total": len(eval_output),
+                    "num_valid": num_total_valid,
+                    "num_corect": num_total_correct,
+                    "accuracy": (
+                        num_total_correct / num_total_valid
+                        if num_total_valid > 0
+                        else None
+                    ),
+                },
+                indent=2,
+            )
+        )
 
     # Temporal Correlation Evaluation, if "tweet_id" data is available
     if args.evaluate_temporal_correlation:
