@@ -23,10 +23,16 @@ PROJECTIONS = {
     ("1", "1"): "feasible, no search required",
 }
 
+FEASIBILITY_LEVEL_MAPS = {
+    "not feasible even with search": 0,
+    "feasible, requires search": 1,
+    "feasible, no search required": 2,
+}
+
 
 async def evaluate_feasibility(
     statements: list[str], llm_evaluator: "AsyncLLMEvaluator"
-) -> dict[str | None, int]:
+) -> tuple[dict[str | None, int], list[str | None]]:
     """Evaluate feasibility of the given data.
 
     Params:
@@ -39,6 +45,8 @@ async def evaluate_feasibility(
         - "feasible, requires search": int
         - "not feasible even with search": int
         - None: int
+
+        list of raw predictions.
     """
 
     per_template_predictions: list[list[str | None]] = []
@@ -59,4 +67,4 @@ async def evaluate_feasibility(
     for _paired_prediction in zip(*per_template_predictions):
         projected_predictions.append(PROJECTIONS.get(_paired_prediction))
 
-    return Counter(projected_predictions)
+    return Counter(projected_predictions), projected_predictions

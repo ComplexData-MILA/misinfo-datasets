@@ -9,12 +9,13 @@ import logging
 import os
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Coroutine, Optional, TypeVar
+from typing import Awaitable, Callable, Coroutine, Optional, TypeVar
 
 import backoff
 import openai
 import pydantic
 from elasticsearch import AsyncElasticsearch
+from opentelemetry import context
 from tqdm.asyncio import tqdm
 
 client = openai.AsyncOpenAI()
@@ -25,42 +26,6 @@ class CacheEntry(pydantic.BaseModel):
 
     prompt: str
     response: str
-
-
-class Cache:
-    def __init__(self, cache_path: str | Path):
-        self.cache: dict[str, str] = {}
-        self.new_entries: dict[str, str] = {}
-        self.cache_path = cache_path
-        if not os.path.exists(cache_path):
-            gzip.open(cache_path, "wt")
-
-        with gzip.open(cache_path, "rt") as cache_file:
-            for row in cache_file.readlines():
-                if len(row.strip()) > 0:
-                    entry = CacheEntry.model_validate_json(row.strip())
-                    self.cache[entry.prompt] = entry.response
-
-    def write(self):
-        with gzip.open(self.cache_path, "at") as cache_file:
-            cache_file.write("\n")
-            for key, value in self.cache.items():
-                line = CacheEntry(prompt=key, response=value).model_dump_json() + "\n"
-                cache_file.write(line)
-
-    @contextmanager
-    def cache_response(self, prompt: str):
-        """Cache response."""
-
-        def _add_cache_callback(response: str):
-            self.new_entries[prompt] = response
-            self.cache[prompt] = response
-
-        if prompt in self.cache:
-            yield self.cache[prompt], _add_cache_callback
-            return
-
-        yield None, _add_cache_callback
 
 
 class AsyncElasticsearchCache:
@@ -153,28 +118,59 @@ V = TypeVar("V")
 Serializer = TypeVar("Serializer", bound=pydantic.BaseModel)
 
 
+@contextmanager
+def disable_auto_tracing():
+    """
+    Context manager that sets the `suppress_instrumentation` flag
+    so that any auto-instrumentation which checks it will bail out.
+    """
+    # Create a new Context with suppression enabled
+    new_ctx = context.set_value("suppress_instrumentation", True)
+    # Attach it, saving the token for later
+    token = context.attach(new_ctx)
+    try:
+        yield
+    finally:
+        # Detach to restore the previous context
+        context.detach(token)
+
+
 async def cached(
-    _fn: Callable[[], Coroutine[None, None, Serializer]],
+    _fn: Callable[[], Awaitable[Serializer]],
     _key: str,
     output_serializer_class: type[Serializer],
-    cache: AsyncElasticsearchCache,
+    cache: AsyncElasticsearchCache | None,
+    assert_cached: bool = False,
 ) -> Serializer:
-    """Run _fn only if cache is missed."""
-    cached_data = await cache.get(_key)
+    """Run _fn only if cache is missed or if Cache is None (not provided)."""
+    with disable_auto_tracing():
+        cached_data = (await cache.get(_key)) if (cache is not None) else None
+
     if (cached_data is not None) and not bool(os.getenv("IGNORE_CACHE")):
         # Cache hit
-        return output_serializer_class.model_validate_json(cached_data)
+        output = output_serializer_class.model_validate_json(cached_data)
+        return output_serializer_class(**{**output.model_dump(), "cache_hit": True})
+
+    if assert_cached:
+        raise RuntimeError(f"assert_cached is set and cache missed on key: {_key}")
 
     # Cache miss
     output = await _fn()
     cached_data = output.model_dump_json()
-    await cache.set(_key, value=cached_data)
+    if cache is not None:
+        with disable_auto_tracing():
+            await cache.set(_key, value=cached_data)
 
     return output
 
 
+async def indexed(index: int, coro: Coroutine[None, None, V]) -> tuple[int, V]:
+    """Returns (index, await coro)."""
+    return index, (await coro)
+
+
 async def rate_limited(
-    _fn: Callable[[], Coroutine[None, None, V]], semaphore: asyncio.Semaphore
+    _fn: Callable[[], Awaitable[V]], semaphore: asyncio.Semaphore
 ) -> V:
     """Run _fn with semaphore rate limit."""
     async with semaphore:
@@ -184,49 +180,35 @@ async def rate_limited(
 @backoff.on_exception(backoff.expo, (openai.RateLimitError,))
 async def generate(
     prompt: str,
-    data: Data,
     model_name: str,
-    async_semaphore: asyncio.Semaphore,
     async_client: openai.AsyncOpenAI,
-    cache: Cache,
-    assert_cached: bool = False,
     max_completion_tokens: int = 4096,
-) -> tuple[str, Data]:
+) -> CacheEntry:
     """Generate using ChatCompletion generation.
 
     Params:
         prompt: str
         data: to be returned verbatim
         model_name: str
-        async_semaphore: to limit number of concurrent requests.
         async_client: async OpenAI client.
-        cache: Cache
     """
-    async with async_semaphore:
-        with cache.cache_response(prompt) as (cached_output, _callback):
-            if cached_output is not None:
-                return cached_output, data
+    response = await async_client.chat.completions.create(
+        model=model_name,
+        messages=[{"role": "user", "content": prompt}],
+        max_completion_tokens=max_completion_tokens,
+    )
 
-            assert not assert_cached, "Cache miss. Maybe run without --assert_cached?"
+    output = response.choices[0].message.content
+    assert output is not None
 
-            response = await async_client.chat.completions.create(
-                model=model_name,
-                messages=[{"role": "user", "content": prompt}],
-                max_completion_tokens=max_completion_tokens,
-            )
-
-            output = response.choices[0].message.content
-            assert output is not None
-            _callback(output)
-
-    return output, data
+    return CacheEntry(prompt=prompt, response=output)
 
 
 class AsyncLLMEvaluator:
     def __init__(
         self,
         model_name: str,
-        cache: Cache,
+        cache: AsyncElasticsearchCache | None,
         async_semaphore: asyncio.Semaphore,
         assert_cached: bool = False,
         max_completion_tokens: int = 4096,
@@ -256,15 +238,23 @@ class AsyncLLMEvaluator:
             list of extracted answers, same length as data.
         """
         coros = [
-            generate(
-                prompt=apply_template_fn(row),
-                data={**row, "_index": index},
-                model_name=self.model_name,
-                async_semaphore=self.async_semaphore,
-                async_client=self.async_client,
-                cache=self.cache,
-                assert_cached=self.assert_cached,
-                max_completion_tokens=self.max_completion_tokens,
+            indexed(
+                index,
+                coro=rate_limited(
+                    lambda row=row: cached(
+                        lambda row=row: generate(
+                            prompt=apply_template_fn(row),
+                            model_name=self.model_name,
+                            async_client=self.async_client,
+                            max_completion_tokens=self.max_completion_tokens,
+                        ),
+                        _key=apply_template_fn(row),
+                        output_serializer_class=CacheEntry,
+                        cache=self.cache,
+                        assert_cached=self.assert_cached,
+                    ),
+                    semaphore=self.async_semaphore,
+                ),
             )
             for index, row in enumerate(rows)
         ]
@@ -272,8 +262,7 @@ class AsyncLLMEvaluator:
         output: list[str | None] = [None for _ in range(len(coros))]
 
         for task in tqdm(asyncio.as_completed(coros), ncols=75, total=len(coros)):
-            _text_output, _data = await task
-            _index = _data["_index"]
-            output[_index] = extract_answer_fn(_text_output)  # type: ignore
+            _index, _cache_entry = await task
+            output[_index] = extract_answer_fn(_cache_entry.response)
 
         return output

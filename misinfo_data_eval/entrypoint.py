@@ -28,7 +28,7 @@ async def main():
 
     # Feasibility Evaluation
     if args.evaluate_feasibility:
-        from .generation_utils import AsyncLLMEvaluator, Cache
+        from .generation_utils import AsyncElasticsearchCache, AsyncLLMEvaluator
         from .tasks.feasibility_eval import evaluate_feasibility
 
         if args.evaluator_model_name is None:
@@ -37,17 +37,25 @@ async def main():
 
         makedirs("data/cache", exist_ok=True)
         async_semaphore = asyncio.Semaphore(args.max_concurrency)
-        cache = Cache(f"data/cache/{args.evaluator_model_name}.jsonl.gz")
+        es_cache = await AsyncElasticsearchCache.maybe_from_env_var(
+            f"cache_misinfo_eval_feasibility"
+        )
+        if es_cache is None:
+            print(
+                "Warning: es_cache is not available. "
+                "See AsyncElasticsearchCache.maybe_from_env_var on how to enable."
+            )
+
         llm_evaluator = AsyncLLMEvaluator(
             model_name=args.evaluator_model_name,
-            cache=cache,
+            cache=es_cache,
             async_semaphore=async_semaphore,
             assert_cached=args.assert_cached,
             max_completion_tokens=args.max_generation_tokens,
         )
 
         try:
-            feasibility_metrics = await evaluate_feasibility(
+            feasibility_metrics, _ = await evaluate_feasibility(
                 statements=[_row["claim"] for _row in dataset][: args.limit],
                 llm_evaluator=llm_evaluator,
             )
@@ -55,54 +63,8 @@ async def main():
 
         finally:
             # Cache previous generations if interrupted.
-            cache.write()
-
-    if args.evaluate_factuality:
-        from .generation_utils import AsyncElasticsearchCache
-        from .tasks.web_search import batch_evaluate
-
-        async_semaphore = asyncio.Semaphore(args.max_concurrency)
-        es_cache = await AsyncElasticsearchCache.maybe_from_env_var(
-            "cache_misinfo_eval_web_retrieval"
-        )
-        assert es_cache is not None
-
-        data_rows = [
-            _row
-            for _row in dataset[: args.limit]
-            if _row["veracity"] in ("true", "false")
-        ]
-        eval_output = await batch_evaluate(
-            data_rows,
-            cache=es_cache,
-            async_semaphore=async_semaphore,
-            total=len(data_rows),
-        )
-        await es_cache.close()
-
-        num_total_valid = 0
-        num_total_correct = 0
-
-        for output in eval_output:
-            if output.is_correct is not None:
-                num_total_valid += 1
-                num_total_correct += output.is_correct
-
-        print(
-            json.dumps(
-                {
-                    "num_total": len(eval_output),
-                    "num_valid": num_total_valid,
-                    "num_corect": num_total_correct,
-                    "accuracy": (
-                        num_total_correct / num_total_valid
-                        if num_total_valid > 0
-                        else None
-                    ),
-                },
-                indent=2,
-            )
-        )
+            if es_cache:
+                await es_cache.close()
 
     # Temporal Correlation Evaluation, if "tweet_id" data is available
     if args.evaluate_temporal_correlation:
