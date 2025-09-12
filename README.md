@@ -50,6 +50,16 @@ Evaluating Feasibility: 100%|████████████████| 2
   "feasible, no search required": 4
 }
 ```
+## Run LLM Web Retrieval Accuracy Analysis
+
+```bash
+source .env && \
+uv run -m misinfo_data_eval.entrypoint \
+--source_dataset_path hf://ComplexDataLab/Misinfo_Datasets@ce06269:liar_new:test \
+--evaluate_factuality \
+--max_concurrency 32 \
+--limit 72
+```
 
 ## Run Evaluation on a dataset where tweet_id is available
 

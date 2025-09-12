@@ -7,9 +7,11 @@ from .data_loading_utils import DATA_INSTRUCTIONS, load_data
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--evaluator_model_name")
+parser.add_argument("--web_search_model_name")
 parser.add_argument("--source_dataset_path", required=True, help=DATA_INSTRUCTIONS)
 parser.add_argument("--max_concurrency", type=int, default=1)
 parser.add_argument("--evaluate_feasibility", action="store_true", default=False)
+parser.add_argument("--evaluate_factuality", action="store_true", default=False)
 parser.add_argument(
     "--evaluate_temporal_correlation", action="store_true", default=False
 )
@@ -21,12 +23,12 @@ parser.add_argument("--limit", type=int, default=-1)
 
 async def main():
     args = parser.parse_args()
-    dataset = load_data(args.source_dataset_path)
+    dataset = list(load_data(args.source_dataset_path))
     print("len(dataset):", len(dataset))
 
     # Feasibility Evaluation
     if args.evaluate_feasibility:
-        from .generation_utils import AsyncLLMEvaluator, Cache
+        from .generation_utils import AsyncElasticsearchCache, AsyncLLMEvaluator
         from .tasks.feasibility_eval import evaluate_feasibility
 
         if args.evaluator_model_name is None:
@@ -35,17 +37,25 @@ async def main():
 
         makedirs("data/cache", exist_ok=True)
         async_semaphore = asyncio.Semaphore(args.max_concurrency)
-        cache = Cache(f"data/cache/{args.evaluator_model_name}.jsonl.gz")
+        es_cache = await AsyncElasticsearchCache.maybe_from_env_var(
+            f"cache_misinfo_eval_feasibility"
+        )
+        if es_cache is None:
+            print(
+                "Warning: es_cache is not available. "
+                "See AsyncElasticsearchCache.maybe_from_env_var on how to enable."
+            )
+
         llm_evaluator = AsyncLLMEvaluator(
             model_name=args.evaluator_model_name,
-            cache=cache,
+            cache=es_cache,
             async_semaphore=async_semaphore,
             assert_cached=args.assert_cached,
             max_completion_tokens=args.max_generation_tokens,
         )
 
         try:
-            feasibility_metrics = await evaluate_feasibility(
+            feasibility_metrics, _ = await evaluate_feasibility(
                 statements=[_row["claim"] for _row in dataset][: args.limit],
                 llm_evaluator=llm_evaluator,
             )
@@ -53,7 +63,8 @@ async def main():
 
         finally:
             # Cache previous generations if interrupted.
-            cache.write()
+            if es_cache:
+                await es_cache.close()
 
     # Temporal Correlation Evaluation, if "tweet_id" data is available
     if args.evaluate_temporal_correlation:

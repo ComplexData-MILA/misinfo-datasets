@@ -5,7 +5,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 
-
 LABEL_MAP = {"true": 1, "false": 0, "unknown": None}
 
 
